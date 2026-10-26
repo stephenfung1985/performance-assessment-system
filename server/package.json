@@ -8,7 +8,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "seed": "node lib/seed.js"
+    "seed": "node lib/seed.js",
+    "passwd": "node lib/set-password.js"
   },
   "engines": {
     "node": ">=18"

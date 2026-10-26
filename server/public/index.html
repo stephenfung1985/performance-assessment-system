@@ -90,6 +90,16 @@ button,input,select,textarea{font:inherit;color:inherit}
 .navbtn[aria-current="true"]{background:var(--accent);color:#fff}
 .navbtn .n{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:0 0 auto;opacity:.72}
 .navbtn[aria-current="true"] .n{opacity:1}
+/* 顶部当前账号 + 退出登录：只在后端模式显示，和左上角菜单按钮同一行（左侧让出按钮位置） */
+.railuser{display:flex;align-items:center;gap:8px;min-height:31px;margin:22px 12px 0 54px}
+.railuser[hidden]{display:none}
+.railuser .who{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11.5px;font-weight:590}
+.logoutbtn{flex:0 0 auto;background:var(--fill);color:var(--neg);border:0;border-radius:var(--r-sm);padding:5px 10px;
+  font-size:12px;font-weight:590;cursor:pointer;transition:background .18s ease}
+.logoutbtn:hover{background:var(--fill-2)}
+.logoutbtn:disabled{opacity:.5;cursor:default}
+.rail.has-user .brand{padding-top:12px}
+.rail.has-user .brand .mark{padding-left:0;min-height:0}
 .railfoot{margin-top:auto;padding:14px 18px 0;border-top:1px solid var(--line-2);color:var(--muted);font-size:10.5px;line-height:1.5}
 .iconbtn{position:fixed;top:13px;z-index:30;width:31px;height:31px;display:inline-flex;align-items:center;justify-content:center;
   background:var(--material);-webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);
@@ -340,6 +350,8 @@ main.full{padding-bottom:26px}
   .rail>*{flex:0 0 auto}
   .rail{padding-right:52px;padding-left:52px}
   .navbtn{width:auto;margin:0;white-space:nowrap;padding:6px 12px}
+  .railuser{margin:0 4px 0 0;min-height:0}
+  .railuser .who{display:none}
   main{padding:18px 15px 64px}
   .f2,.f3{grid-template-columns:1fr}
   .kpis{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
@@ -352,6 +364,10 @@ main.full{padding-bottom:26px}
 <button class="iconbtn themebtn" id="themeBtn" type="button"></button>
 <div class="app" id="app">
 <nav class="rail">
+  <div class="railuser" id="railUser" hidden>
+    <span class="who" id="railWho"></span>
+    <button class="logoutbtn" id="logoutBtn" type="button">退出登录</button>
+  </div>
   <div class="brand">
     <div class="mark">BHDC · No.3</div>
     <h1>钻井经营考核<br>工作台</h1>
@@ -4650,6 +4666,23 @@ async function ensureBackendAuth(){
   await showLoginGate();
   BACKEND_MODE=true; return true;
 }
+/* 左侧导航顶部的当前账号与退出登录。退出后整页刷新，回到登录遮罩，内存里的数据一并清掉 */
+async function renderRailUser(){
+  const box=document.getElementById('railUser');
+  if(!BACKEND_MODE){ box.hidden=true; return; }
+  const me=await backendWhoAmI();
+  if(!me){ box.hidden=true; return; }
+  const who=document.getElementById('railWho');
+  who.textContent=me.username;
+  who.title='当前账号：'+me.username+(me.role==='admin'?'（管理员）':'');
+  box.hidden=false; box.closest('.rail').classList.add('has-user');
+}
+document.getElementById('logoutBtn').onclick=async function(){
+  if(!confirm('确定退出登录？')) return;
+  this.disabled=true;
+  try{ await apiFetch('/api/auth/logout',{method:'POST'}); }catch(e){}
+  location.reload();
+};
 /* 重新拉取并重绘：作为告警条上「重试」的动作，拉回来的数据得真的显示出来 */
 async function rehydrate(){ await hydrateFromBackend(); rerenderAll(); }
 async function hydrateFromBackend(){
@@ -4698,6 +4731,7 @@ function rerenderAll(){
 
 (async function boot(){
   await hydrateFromBackend();
+  renderRailUser();
   // 单机模式（无后端）且首次使用时才填示例数据帮助上手；后端模式服务器已是权威，不预填示例
   if(!BACKEND_MODE && !WELLS){ WELLS=[mkRecord('approved','示例：人工录入演示数据')]; saveWells(); applyDemo(); }
   if(!WELLS) WELLS=[];   // 兜底：后端模式下若 /api/wells 拉取失败，保证 WELLS 不为 null，避免后续渲染崩溃
