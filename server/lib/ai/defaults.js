@@ -6,7 +6,7 @@
 // 字段词典每项：
 //   k        前端 S.w 的键
 //   label    中文名（同时作为首选叫法）
-//   type     num | text | bool | enum
+//   type     num | text | bool | enum | table（table 另有 cols：[[键, 列名, 单位]…]，每行一个开次）
 //   unit     目标单位（解析结果统一换算到这个单位）
 //   aliases  资料里可能出现的其它叫法，排在前面的优先
 //   conv     单位换算：资料单位 → 乘以 factor 得到目标单位
@@ -113,7 +113,39 @@ const FIELDS = [
   { k: 'honorAward', label: '特殊荣誉奖', type: 'num', unit: '元', conv: [{ unit: '万元', factor: WAN }] },
   { k: 'grossMargin', label: '单井毛益率', type: 'num', unit: '%', aliases: ['毛益率'], pick: 'actual' },
   { k: 'qualityDeduct', label: '井筒质量扣款', type: 'num', unit: '元', aliases: ['质量扣款'], conv: [{ unit: '万元', factor: WAN }] },
-  { k: 'damageDeduct', label: '工具损毁赔偿', type: 'num', unit: '元', aliases: ['工具损坏赔偿', '损毁赔偿'], conv: [{ unit: '万元', factor: WAN }] }
+  { k: 'damageDeduct', label: '工具损毁赔偿', type: 'num', unit: '元', aliases: ['工具损坏赔偿', '损毁赔偿'], conv: [{ unit: '万元', factor: WAN }] },
+
+  // —— 一井一策测算参数（取自钻井工程设计书，一律取设计值）——
+  { k: 'designDepth', label: '设计井深', type: 'num', unit: '米', aliases: ['设计完钻井深', '设计斜深', '设计总井深', '设计完钻斜深'], pick: 'design',
+    conv: [{ unit: 'm', factor: 1 }],
+    note: '设计完钻井深（斜深 MD）。不是垂深，也不是某一开次的井深。' },
+  { k: 'designVertDepth', label: '设计垂深', type: 'num', unit: '米', aliases: ['设计完钻垂深', '设计垂直井深', '完钻垂深'], pick: 'design',
+    conv: [{ unit: 'm', factor: 1 }] },
+  { k: 'designHorizLen', label: '设计水平段长', type: 'num', unit: '米', aliases: ['水平段设计长度', '设计水平段长度', '水平段长'], pick: 'design',
+    conv: [{ unit: 'm', factor: 1 }] },
+  { k: 'designDisp', label: '设计水平位移', type: 'num', unit: '米', aliases: ['设计位移', '设计闭合位移', '完钻位移', '闭合位移'], pick: 'design',
+    conv: [{ unit: 'm', factor: 1 }],
+    note: '取完钻（井底）闭合位移，不取某个靶点的位移。' },
+  { k: 'designTechCasing', label: '设计技套下深', type: 'num', unit: '米', aliases: ['技术套管设计下深', '技套设计下深', '技术套管下深', '技套下深'], pick: 'design',
+    conv: [{ unit: 'm', factor: 1 }],
+    note: '取技术套管的设计下入深度（米），不要取套管尺寸；表层套管、油层套管、尾管都不是技术套管。' },
+  { k: 'maxIncl', label: '最大井斜', type: 'num', unit: '°', aliases: ['最大井斜角', '设计最大井斜', '最大井斜角度'], pick: 'design',
+    conv: [{ unit: '度', factor: 1 }] },
+  { k: 'targetFm', label: '目的层', type: 'text', aliases: ['目的层位', '目的层系', '主要目的层', '设计目的层', '钻探目的层'], pick: 'design',
+    note: '写层位名称，如「沙三段」「孔二段」；多个目的层用顿号分隔。' },
+  { k: 'pressureCoef', label: '地层压力系数', type: 'num', unit: '', aliases: ['压力系数', '地层孔隙压力系数', '预测地层压力系数', '孔隙压力系数'], pick: 'design',
+    note: '无量纲，一般在 0.8～2.0 之间。分段给出时取目的层段的值，并在依据里说明。' },
+  { k: 'mudDensity', label: '设计钻井液密度', type: 'num', unit: 'g/cm³', aliases: ['钻井液密度', '泥浆密度', '设计泥浆密度'], pick: 'design',
+    conv: [{ unit: 'g/cm3', factor: 1 }, { unit: 'kg/m³', factor: 0.001 }, { unit: 'kg/m3', factor: 0.001 }],
+    note: '取目的层段（最后一开）的设计钻井液密度；给出范围（如 1.20～1.35）时取上限。' },
+  { k: 'rigModel', label: '设计钻机', type: 'enum', options: ['50型', '70型'], aliases: ['钻机型号', '设计钻机型号', '钻机类型', '钻机选型', '钻机'], pick: 'design',
+    note: 'ZJ50 系列 → 50型，ZJ70 系列 → 70型；其它型号不填。' },
+  { k: 'powerMode', label: '动力方式', type: 'enum', options: ['网电', '柴油', '网电+柴油'], aliases: ['动力类型', '驱动方式', '钻机动力', '动力配置'], pick: 'design',
+    note: '电动钻机接网电 → 网电；柴油机驱动或柴油发电 → 柴油；网电为主、柴油备用 → 网电+柴油。' },
+  { k: 'designSections', label: '分开次井身结构', type: 'table', aliases: ['井身结构设计', '井身结构', '钻头程序', '套管程序', '分段钻井周期', '钻井周期设计', '机械钻速'], pick: 'design',
+    cols: [['phase', '开次', ''], ['from', '井段起', '米'], ['to', '井段止', '米'], ['bit', '钻头尺寸', 'mm'],
+      ['casing', '套管下深', '米'], ['rop', '设计机械钻速', 'm/h'], ['days', '分段周期', '天']],
+    note: '每个开次一行。开次写 1、2、3…；井段起止和套管下深取米；钻头尺寸取毫米（英寸×25.4）；设计机械钻速取 m/h；分段周期取该开次的设计钻井天数。资料没给的单元格写 null。' }
 ];
 
 // 行业术语与专有名词。kind：区块 / 井型 / 队号 / 井号 / 缩写 / 其他。
@@ -144,7 +176,8 @@ const RULES = [
   { text: '数值一律换算到字段词典规定的单位：万元→元（×10000），小时→天（÷24），万度→度（×10000），千克→吨（÷1000）。输出的 value 是换算后的纯数字，不带单位和千分位逗号。' },
   { text: '资料里找不到的字段不要输出，不要根据常识、定额或其它字段推算。是/否类字段只有资料里有明确文字依据时才输出。' },
   { text: '技套下深取技术套管的下入深度（米），不是套管外径（mm）；表层套管、油层套管、尾管都不是技术套管。' },
-  { text: '水平位移、垂深取完钻时（井底）的数据，不取某个测点或靶点的数据。' }
+  { text: '水平位移、垂深取完钻时（井底）的数据，不取某个测点或靶点的数据。' },
+  { text: '一井一策测算参数（设计井深、设计垂深、设计水平段长、设计水平位移、设计技套下深、最大井斜、目的层、地层压力系数、设计钻井液密度、设计钻机、动力方式、分开次井身结构）取自钻井工程设计书，一律取设计值；完井报告里的实际值不要填进这些字段。' }
 ];
 
 function defaults() {

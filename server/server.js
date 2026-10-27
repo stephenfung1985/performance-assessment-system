@@ -210,6 +210,16 @@ app.put('/api/perf', auth.requireAuth, (req, res) => {
   res.json({ ok: true, count: req.body.length });
 });
 
+// ================= 一井一策测算记录（未涵盖区块按设计书测算定额，前端整表读写） =================
+app.get('/api/owpcalc', auth.requireAuth, (req, res) => {
+  res.json(store.readJSON('owpcalc', null));   // null = 还没有测算记录
+});
+app.put('/api/owpcalc', auth.requireAuth, (req, res) => {
+  if (!Array.isArray(req.body)) return res.status(400).json({ error: 'body_must_be_array' });
+  store.writeJSON('owpcalc', req.body);
+  res.json({ ok: true, count: req.body.length });
+});
+
 // ================= 月度填报（切块考核：四口径经营指标与切块参数，按年份分文件） =================
 app.get('/api/filings/:year', auth.requireAuth, (req, res) => {
   const year = String(req.params.year).replace(/[^0-9]/g, '');

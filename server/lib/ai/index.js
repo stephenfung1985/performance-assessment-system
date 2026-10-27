@@ -2,7 +2,7 @@
 // AI 解析导入的接口。全部要求登录；规则管理只给 admin。
 //   GET  /api/ai/status          是否启用、厂商与模型名（不含密钥），前端据此决定显示哪些入口
 //   POST /api/ai/extract?name=   上传单个文件（请求体就是文件本身），返回抽取的文本
-//   POST /api/ai/parse           {docs:[{name,text}], mode:'ai'|'local'} → 字段候选值
+//   POST /api/ai/parse           {docs:[{name,text}], mode:'ai'|'local', scope?:'full', only?:[字段键]} → 字段候选值
 //   GET/PUT /api/ai/rules        解析规则（字段词典 / 术语 / 理解规则 / 少样本示例）
 //   POST /api/ai/rules/reset     恢复出厂规则（保留已沉淀的示例）
 //   POST /api/ai/prompt          预览按已保存规则拼出的提示词（admin，试解析用）
@@ -60,10 +60,17 @@ router.post('/parse', async (req, res) => {
   if (!docs.length) return res.status(400).json({ error: '没有资料' });
   if (total > MAX_TOTAL_CHARS) return res.status(413).json({ error: '资料文字总量 ' + total + ' 字，超过上限 ' + MAX_TOTAL_CHARS + ' 字，请减少文件' });
   if (BUSY.has(req.user.username)) return res.status(429).json({ error: '上一次解析还没结束，请稍候' });
+  // scope=full + only=[字段键]：「扩大范围重试」，只问片段里没找到的那几个字段，整份资料发过去
+  const opts = { scope: b.scope === 'full' ? 'full' : 'snippet', only: Array.isArray(b.only) ? b.only.map(k => String(k).slice(0, 40)).slice(0, 80) : null };
+  if (opts.scope === 'full' && !(opts.only && opts.only.length)) return res.status(400).json({ error: '扩大范围重试需要指定字段' });
   BUSY.add(req.user.username);
   try {
-    const r = await parse.run(rules.load(), docs, mode);
-    console.log('[ai] ' + req.user.username + ' 解析 ' + docs.length + ' 份资料（' + total + ' 字）→ ' + Object.keys(r.fields).length + ' 个字段，' + r.model + '，' + r.ms + 'ms');
+    const r = await parse.run(rules.load(), docs, mode, opts);
+    const s = r.stats, u = r.usage;
+    console.log('[ai] ' + req.user.username + ' 解析 ' + docs.length + ' 份资料（' + total + ' 字）→ ' + Object.keys(r.fields).length + ' 个字段，' + r.model + '，' + r.ms + 'ms' +
+      (r.cached ? '，命中缓存' : '') +
+      (s ? '；' + (s.scope === 'full' ? '扩大范围' : '本地定 ' + s.local + ' 项，') + '问 ' + s.asked + ' 项，发送 ' + s.snippets + ' 段 ' + s.sentChars + ' 字' : '') +
+      (u ? '；token 输入 ' + u.input + '（缓存命中 ' + u.cacheHit + '）输出 ' + u.output : ''));
     res.json(r);
   } catch (e) { fail(res, e); }
   finally { BUSY.delete(req.user.username); }

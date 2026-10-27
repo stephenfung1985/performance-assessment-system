@@ -1,17 +1,53 @@
 // ============================================================
-// 解析编排：拼提示词 → 调大模型 → 校验/换算/打置信度；
-// 另有一套不出网的「本地词典解析」，只按字段词典的叫法在表格和「名称：数值」里找值，
-// 用于没配大模型、或资料涉密不愿外发时兜底。两条路输出同一结构：
+// 解析编排。两条路输出同一结构：
 //   fields: { <S.w 键>: { value, conf, evidence, file, unit, flags[] } }
+//
+// AI 解析走「本地优先 + 片段精读 + 只问缺口」，尽量少花 token：
+//   1. 本地词典先扫一遍（不花 token），表格 / 「名称：数值」里直接命中、又不需要理解上下文的字段就此定下
+//   2. 剩下的字段里，资料中连叫法（或线索词）都没出现的不问，留给「扩大范围重试」
+//   3. 只把命中这些字段叫法的表格行、段落、章节截成片段（默认共 4000 字）发给大模型，
+//      提示词里也只放这些字段的词典条目、相关术语、相关规则和示例
+//   4. 输出用紧凑数组，依据只写片段号 + 不超过 40 字原文
+//   同一批资料、同一版规则的结果在内存里缓存，重复解析不再调用大模型。
+// 不出网的「本地词典解析」（mode=local）只做第 1 步，用于没配大模型或资料涉密时兜底。
 // ============================================================
+const crypto = require('crypto');
 const store = require('../store');
 const llm = require('./llm');
 
 const MAX_EXAMPLES = Number(process.env.AI_MAX_EXAMPLES) || 12;
+const MAX_EXAMPLE_ITEMS = 6;                                       // 片段模式下最多带几条相关纠正
+const SNIPPET_CHARS = Number(process.env.AI_SNIPPET_CHARS) || 4000;
+const MAX_CHARS = Number(process.env.AI_MAX_CHARS) || 30000;       // 扩大范围时单份资料最多取多少字
 const squash = s => String(s == null ? '' : s).replace(/[\s|｜]+/g, '').toLowerCase();
 const round = n => Math.round(n * 10000) / 10000;
 const CN_NUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5 };
 const WELLTYPE_SYN = [[/水平/, '水平井'], [/定向|斜/, '定向井'], [/直井|垂直/, '直井']];
+
+// 只用来判断资料里有没有这个字段的线索、以及截片段，不发给大模型。
+// 有些字段要靠别的量推出来（钻完井周期 = 钻井周期 + 完井周期），光看它自己的叫法会漏问。
+const CLUES = {
+  cycleDays: ['钻井周期', '完井周期', '建井周期'],
+  preDays: ['建井周期', '搬安'],
+  footage: ['井深', '进尺'],
+  phase: ['一开', '二开', '三开', '四开', '开次'],
+  wellType: ['水平井', '定向井', '直井', '井型', '斜井'],
+  block: ['区块', '构造', '油田'],
+  team: ['钻井队', '井队'],
+  hasAccident: ['事故', '复杂'],
+  winter: ['冬季', '冬防'],
+  e2o: ['网电', '电代油'],
+  diesel: ['柴油', '网电'],
+  rigModel: ['ZJ50', 'ZJ70', 'ZJ'],
+  powerMode: ['网电', '柴油', '电动钻机'],
+  designSections: ['一开', '二开', '套管', '钻头']
+};
+// 本地词典命中也不能直接定下的字段：要理解上下文（实际/设计、拆分、合计），交给大模型
+const NEED_CONTEXT = new Set(['footage', 'cycleDays', 'assessedCycleDays', 'preDays', 'testDays', 'coreDays', 'kickDays',
+  'lossDays', 'waitDays', 'sidetrack', 'phase', 'wellType', 'block']);
+// 章节标题：「二、井身结构设计」「3.2 钻井周期」「（三）钻机选型」「第四章 …」，不超过 30 字、不带表格分隔
+const HEADING = /^(?:[一二三四五六七八九十]+[、.．]|[（(][一二三四五六七八九十\d]+[)）]|\d+(?:\.\d+)*[、.．\s]|第[一二三四五六七八九十\d]+[章节])[^|｜]{1,28}$/;
+const TOC = /\.{4,}|…{2,}|·{4,}/;   // 目录行：「3.2 井身结构 ........ 12」
 
 // 定额库里的队号、区块是动态的，解析时现取，给大模型当候选
 function context() {
@@ -27,9 +63,12 @@ function optionsOf(f, ctx) {
   return f.options || null;
 }
 
+const namesOf = f => [...new Set([f.label, ...f.aliases, ...(CLUES[f.k] || [])])].filter(n => n && n.length >= 2);
+
 // ---------------- 提示词 ----------------
 function describeField(f, ctx) {
-  const t = f.type === 'num' ? '数值' + (f.unit ? '，单位：' + f.unit : '') : f.type === 'bool' ? '是/否（输出 true/false）' : f.type === 'enum' ? '枚举' : '文本';
+  const t = f.type === 'num' ? '数值' + (f.unit ? '，单位：' + f.unit : '') : f.type === 'bool' ? '是/否（输出 true/false）'
+    : f.type === 'enum' ? '枚举' : f.type === 'table' ? '表格，列：' + (f.cols || []).map(c => c[1] + (c[2] ? '(' + c[2] + ')' : '')).join('，') : '文本';
   const parts = [f.k + '｜' + f.label + '｜' + t];
   const opts = optionsOf(f, ctx);
   if (opts && opts.length) parts.push('候选值：' + opts.join('、'));
@@ -41,39 +80,130 @@ function describeField(f, ctx) {
   return '- ' + parts.join('｜');
 }
 
-function buildPrompt(rules, docs, ctx) {
-  const fields = rules.fields.filter(f => f.enabled);
+// 固定不变的开头放最前面：DeepSeek / Claude 的前缀缓存能命中，这部分按缓存价计费
+const HEAD = [
+  '你是渤海钻探第三钻井公司（大港油区）单井经营考核的资料录入助手，从资料片段中抽取指定字段。',
+  '1. 只依据片段原文，不推测、不补全；找不到的字段不要输出。',
+  '2. 只输出一个 JSON：{"f":{"<字段键>":[值,"原单位",置信度,"依据","片段号"]},"n":["需要人工注意的问题"]}',
+  '   值：换算到目标单位后的数字、文本或 true/false；表格字段的值是二维数组，每行一个开次、按列顺序，缺的单元格写 null。',
+  '   原单位：资料里写的单位，没有写 ""。置信度：0~1。依据：从片段逐字摘录，不超过 40 字，必须能原样找到。片段号：如 "S2"。',
+  '3. 遵守下面的字段词典、术语和数据理解规则；「纠正示例」是考核办公室确认过的口径，与常识冲突时以示例为准。'
+].join('\n');
+
+function prompt(rules, p, ctx) {
   const label = Object.fromEntries(rules.fields.map(f => [f.k, f.label]));
-  const exs = rules.examples.filter(e => e.status === 'on').slice(-MAX_EXAMPLES);
-  const sys = [
-    '你是渤海钻探第三钻井公司（大港油区）单井经营考核的资料录入助手，任务是从单井资料中抽取「单井参数录入表」的字段值。',
-    '要求：',
-    '1. 只依据资料原文，不推测、不补全；资料里找不到的字段不要输出。',
-    '2. 每个字段输出 value（换算到目标单位后的值）、unit（资料中的原始单位）、conf（0~1 的置信度）、evidence（从原文逐字摘录的依据，不超过 80 字，必须能在原文中原样找到）、file（依据所在的文件名）。',
-    '3. 严格遵守下面的字段词典、术语表和数据理解规则。「人工纠正示例」是考核办公室确认过的口径，与你的常识冲突时以示例为准。',
-    '4. 只输出一个 JSON 对象：{"fields":{"<字段键>":{"value":…,"unit":"…","conf":0.9,"evidence":"…","file":"…"}},"notes":["需要人工注意的问题"]}',
-    '',
-    '## 字段词典（字段键｜名称｜类型｜…）',
-    ...fields.map(f => describeField(f, ctx)),
-    '',
-    '## 行业术语与专有名词',
-    ...(rules.terms.length ? rules.terms.map(t => '- [' + t.kind + '] ' + t.term + '：' + t.meaning) : ['（无）']),
-    '',
-    '## 数据理解规则',
-    ...rules.rules.filter(r => r.enabled).map((r, i) => (i + 1) + '. ' + r.text)
-  ];
-  if (exs.length) {
-    sys.push('', '## 人工纠正示例');
-    exs.forEach((e, i) => {
-      sys.push('示例 ' + (i + 1) + (e.wellNo ? '（井号 ' + e.wellNo + '）' : '') + (e.note ? '：' + e.note : ''));
-      e.items.forEach(it => sys.push('  - ' + (it.evidence ? '原文「' + it.evidence + '」→ ' : '') + it.k + '（' + (label[it.k] || it.k) + '）= ' +
-        JSON.stringify(it.value) + (it.wrong !== '' ? '（AI 曾解析为 ' + it.wrong + '，已纠正）' : '')));
-    });
-  }
-  const user = '以下是本次上传的 ' + docs.length + ' 份资料，请按要求抽取字段：\n\n' +
-    docs.map(d => '===== 文件：' + d.name + ' =====\n' + d.text + '\n===== 文件结束：' + d.name + ' =====').join('\n\n');
+  const askKeys = new Set(p.ask.map(f => f.k));
+  const text = p.snippets.map(s => s.text).join('\n');
+  // 规则里点了名的字段都不在这次要问的范围内，就不带这条规则；没点名任何字段的是通用规则，照带
+  const named = r => rules.fields.filter(f => r.includes(f.k) || r.includes(f.label));
+  const rs = rules.rules.filter(r => r.enabled).map(r => r.text).filter(r => { const n = named(r); return !n.length || n.some(f => askKeys.has(f.k)); });
+  const KIND_FIELD = { 队号: 'team', 井型: 'wellType', 区块: 'block', 井号: 'wellNo' };
+  const terms = rules.terms.filter(t => askKeys.has(KIND_FIELD[t.kind]) ||
+    t.term.split(/[、,，]/).map(x => x.trim()).some(x => x.length >= 2 && text.includes(x)));
+  const exItems = [];
+  rules.examples.filter(e => e.status === 'on').slice(-MAX_EXAMPLES).reverse().forEach(e => e.items.forEach(it => {
+    if (askKeys.has(it.k) && exItems.length < MAX_EXAMPLE_ITEMS) exItems.push(Object.assign({ wellNo: e.wellNo }, it));
+  }));
+  const sys = [HEAD, '', '## 字段词典（字段键｜名称｜类型｜…）', ...p.ask.map(f => describeField(f, ctx))];
+  if (terms.length) sys.push('', '## 术语', ...terms.map(t => '- [' + t.kind + '] ' + t.term + '：' + t.meaning));
+  if (rs.length) sys.push('', '## 数据理解规则', ...rs.map((r, i) => (i + 1) + '. ' + r));
+  if (exItems.length) sys.push('', '## 纠正示例', ...exItems.map(it => '- ' + (it.wellNo ? '[' + it.wellNo + '] ' : '') +
+    (it.evidence ? '原文「' + it.evidence + '」→ ' : '') + it.k + '（' + (label[it.k] || it.k) + '）= ' + JSON.stringify(it.value) +
+    (it.wrong !== '' ? '（曾误解析为 ' + it.wrong + '）' : '')));
+  const user = '资料片段：\n\n' + p.snippets.map(s => '[' + s.id + ' · ' + s.file + ']\n' + s.text).join('\n\n');
   return { system: sys.join('\n'), user };
 }
+
+// ---------------- 片段 ----------------
+// 长段落只截命中叫法前后的一小段，不整段带上
+function lineText(l, names) {
+  if (l.length <= 400) return l;
+  const spans = [];
+  names.forEach(n => { let at = l.indexOf(n); if (at >= 0) spans.push([Math.max(0, at - 120), Math.min(l.length, at + n.length + 120)]); });
+  if (!spans.length) return l.slice(0, 200) + '…';
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  spans.forEach(s => { const m = merged[merged.length - 1]; if (m && s[0] <= m[1]) m[1] = Math.max(m[1], s[1]); else merged.push(s.slice()); });
+  return merged.map(([a, b]) => (a > 0 ? '…' : '') + l.slice(a, b) + (b < l.length ? '…' : '')).join(' ');
+}
+
+function pickSnippets(docs, fields, budget) {
+  const names = [...new Set(fields.flatMap(namesOf))];
+  const ranges = [];
+  docs.forEach((d, di) => {
+    const lines = String(d.text || '').split('\n');
+    const score = new Array(lines.length).fill(0);
+    const mark = (i, s) => { if (i >= 0 && i < lines.length && s > score[i]) score[i] = s; };
+    lines.forEach((l, i) => {
+      if (!l.trim() || TOC.test(l)) return;
+      const hit = names.reduce((n, x) => n + (l.includes(x) ? 1 : 0), 0);
+      if (hit) {
+        mark(i, 2 * hit); mark(i - 1, 1); mark(i + 1, 1);
+        // 表格数据行：往上找最近的表头（无数字的表格行）一起带上，不然列名丢了
+        if (l.includes('|')) for (let up = i - 1; up >= Math.max(0, i - 40) && lines[up].includes('|'); up--) {
+          if (!/\d/.test(lines[up])) { mark(up, 2 * hit); break; }
+        }
+      }
+      // 点了要问字段的章节标题：带上后面一小节（井身结构、钻井周期这类表格常常只在标题里点名），到下一个标题为止
+      if (hit && HEADING.test(l.trim())) {
+        for (let x = i + 1, n = 0; x < lines.length && x <= i + 8 && n < 400 && !HEADING.test(lines[x].trim()); x++) { mark(x, 1); n += lines[x].length; }
+      }
+    });
+    for (let i = 0; i < lines.length; i++) {
+      if (!score[i]) continue;
+      let j = i, s = 0;
+      while (j < lines.length && score[j]) s += score[j++];
+      const text = lines.slice(i, j).map(l => lineText(l, names)).filter(l => l.trim()).join('\n');
+      if (text) ranges.push({ di, start: i, score: s, text, file: d.name });
+      i = j;
+    }
+  });
+  // 先挑命中多的，凑满预算后按原文顺序排回去
+  const picked = [];
+  let used = 0;
+  ranges.sort((a, b) => b.score / Math.sqrt(b.text.length) - a.score / Math.sqrt(a.text.length)).forEach(r => {
+    if (used >= budget) return;
+    const text = used + r.text.length > budget ? r.text.slice(0, budget - used) + '…' : r.text;
+    if (text.length < 20 && picked.length) return;
+    picked.push(Object.assign({}, r, { text })); used += text.length;
+  });
+  return picked.sort((a, b) => a.di - b.di || a.start - b.start).map((r, i) => ({ id: 'S' + (i + 1), file: r.file, text: r.text }));
+}
+
+// 本次要发给大模型的内容：哪些字段本地已定、问哪些、截哪些片段
+function plan(rules, docs, ctx, opts) {
+  const enabled = rules.fields.filter(f => f.enabled);
+  const only = Array.isArray(opts.only) && opts.only.length ? new Set(opts.only) : null;
+  if (opts.scope === 'full') {
+    // 扩大范围：只问指定字段，整份资料（每份最多 MAX_CHARS 字）发过去，不走本地词典
+    const ask = enabled.filter(f => !only || only.has(f.k));
+    const snippets = docs.map((d, i) => ({ id: 'D' + (i + 1), file: d.name, text: d.text.length > MAX_CHARS ? d.text.slice(0, MAX_CHARS) + '…（后略）' : d.text }));
+    return { scope: 'full', local: {}, settled: {}, ask, skipped: [], snippets };
+  }
+  const local = localParse(rules, docs, ctx).fields;
+  const settled = {};
+  Object.entries(local).forEach(([k, x]) => {
+    const f = enabled.find(y => y.k === k);
+    const warn = x.flags.filter(t => !/^按别名|^已按/.test(t));
+    if (!f || f.type === 'bool' || NEED_CONTEXT.has(k) || warn.length || x.unconverted) return;
+    settled[k] = Object.assign({}, x, { conf: Math.max(x.conf, 0.7), flags: x.flags.concat('本地词典直接命中，未发给大模型') });
+  });
+  const all = docs.map(d => d.text).join('\n');
+  const gap = enabled.filter(f => !settled[f.k] && (!only || only.has(f.k)));
+  const ask = gap.filter(f => namesOf(f).some(n => all.includes(n)));
+  const skipped = gap.filter(f => !ask.includes(f));
+  const snippets = ask.length ? pickSnippets(docs, ask, SNIPPET_CHARS) : [];
+  return { scope: 'snippet', local, settled, ask: snippets.length ? ask : [], skipped: snippets.length ? skipped : gap, snippets };
+}
+
+function buildPrompt(rules, docs, ctx, opts) {
+  const p = plan(rules, docs, ctx, opts || {});
+  const out = p.ask.length ? prompt(rules, p, ctx) : { system: HEAD, user: '' };
+  return Object.assign(out, { stats: statsOf(p) });
+}
+
+const statsOf = p => ({ scope: p.scope, local: Object.keys(p.settled).length, asked: p.ask.length, skipped: p.skipped.length,
+  snippets: p.snippets.length, sentChars: p.snippets.reduce((s, x) => s + x.text.length, 0) });
 
 // ---------------- 取值清洗 ----------------
 function convert(f, num, unit, flags) {
@@ -85,10 +215,35 @@ function convert(f, num, unit, flags) {
   return null;   // 交给调用方降置信度
 }
 
-const NUM_RE = /(-?\d+(?:,\d{3})*(?:\.\d+)?)\s*([a-zA-Z³²%一-龥]{0,4})/;
+const NUM_RE = /(-?\d+(?:,\d{3})*(?:\.\d+)?)\s*([a-zA-Z³²%°一-龥/]{0,6})/;
+const phaseOf = v => {
+  if (typeof v === 'number') return v >= 1 && v <= 6 ? Math.round(v) : null;
+  const m = /([1-6])|([一二三四五])/.exec(String(v == null ? '' : v));
+  return m ? (m[1] ? +m[1] : CN_NUM[m[2]]) : null;
+};
+
+// 表格字段：二维数组（或对象数组）→ [{phase, from, to, …}]，按开次排序
+function coerceTable(f, raw) {
+  if (!Array.isArray(raw)) return undefined;
+  const cols = f.cols || [];
+  const rows = raw.map(r => {
+    if (r && !Array.isArray(r) && typeof r === 'object') r = cols.map(c => r[c[0]]);
+    if (!Array.isArray(r)) return null;
+    const o = {};
+    cols.forEach(([ck], i) => {
+      const v = r[i];
+      if (ck === 'phase') { o.phase = phaseOf(v); return; }
+      const n = typeof v === 'number' ? v : parseFloat(String(v == null ? '' : v).replace(/[,，]/g, ''));
+      o[ck] = isFinite(n) ? round(n) : null;
+    });
+    return o.phase ? o : null;
+  }).filter(Boolean).sort((a, b) => a.phase - b.phase);
+  return rows.length ? rows : undefined;
+}
 
 function coerce(f, raw, unit, ctx, flags) {
   if (raw == null || raw === '') return undefined;
+  if (f.type === 'table') return coerceTable(f, raw);
   if (f.type === 'num') {
     let n = typeof raw === 'number' ? raw : NaN, u = unit;
     if (typeof raw === 'string') {
@@ -117,6 +272,16 @@ function coerce(f, raw, unit, ctx, flags) {
     const hit = WELLTYPE_SYN.find(([re]) => re.test(s));
     return hit ? hit[1] : undefined;
   }
+  if (f.k === 'rigModel') {
+    const m = /([57])0/.exec(s);
+    if (m) return m[1] + '0型';
+    flags.push('钻机「' + s + '」不是 50/70 型');
+    return undefined;
+  }
+  if (f.k === 'powerMode') {
+    const e = /网电|电动|电驱/.test(s), d = /柴油/.test(s);
+    return e && d ? '网电+柴油' : e ? '网电' : d ? '柴油' : undefined;
+  }
   if (f.k === 'team') {
     const opts = optionsOf(f, ctx) || [];
     const hit = opts.filter(o => s.toUpperCase().includes(o.toUpperCase())).sort((a, b) => b.length - a.length)[0];
@@ -136,14 +301,20 @@ function locate(evidence, docs) {
   return docs.find(d => squash(d.text).includes(ev)) || null;
 }
 
-// 大模型原始输出 → 统一结构。依据在原文里找不到的，置信度压到 0.4 以下
-function normalize(raw, rules, docs, ctx) {
-  const byK = new Map(rules.fields.filter(f => f.enabled).map(f => [f.k, f]));
-  let src = raw && raw.fields;
+// 大模型原始输出 → 统一结构。认紧凑数组 [值, 单位, 置信度, 依据, 片段号]，也认旧的对象写法。
+// 依据在原文里找不到的，置信度压到 0.4 以下
+function normalize(raw, rules, docs, ctx, snippets, askKeys) {
+  const byK = new Map(rules.fields.filter(f => f.enabled && (!askKeys || askKeys.has(f.k))).map(f => [f.k, f]));
+  const fileOf = Object.fromEntries((snippets || []).map(s => [s.id, s.file]));
+  let src = raw && (raw.f || raw.fields);
   if (Array.isArray(src)) src = Object.fromEntries(src.filter(x => x && (x.k || x.key)).map(x => [x.k || x.key, x]));
   const out = {};
   Object.entries(src && typeof src === 'object' ? src : {}).forEach(([k, item]) => {
     const f = byK.get(k); if (!f) return;
+    const rowLike = r => r != null && typeof r === 'object' && (!Array.isArray(r) || !Array.isArray(r[0]));
+    if (Array.isArray(item) && f.type !== 'table') item = { value: item[0], unit: item[1], conf: item[2], evidence: item[3], file: item[4] };
+    else if (Array.isArray(item) && item.length && item.every(rowLike)) item = { value: item };   // 表格值直接给成行数组，没带单位/依据
+    else if (Array.isArray(item)) item = { value: item[0], unit: item[1], conf: item[2], evidence: item[3], file: item[4] };
     if (item == null || typeof item !== 'object') item = { value: item };
     const flags = [];
     let value = coerce(f, item.value, item.unit, ctx, flags);
@@ -154,6 +325,7 @@ function normalize(raw, rules, docs, ctx) {
     if (flags.some(x => /不在定额库队伍名单/.test(x))) conf = Math.min(conf, 0.3);
     const evidence = String(item.evidence || '').trim().slice(0, 300);
     let file = String(item.file || '').trim();
+    file = fileOf[file] || file;
     const hit = locate(evidence, docs);
     if (!evidence) { flags.push('未给出原文依据'); conf = Math.min(conf, 0.5); }
     else if (!hit) { flags.push('依据在原文中未找到，可能是模型改写或编造'); conf = Math.min(conf, 0.4); }
@@ -161,8 +333,39 @@ function normalize(raw, rules, docs, ctx) {
     if (!file && docs.length === 1) file = docs[0].name;
     out[k] = { value, conf: round(conf), evidence, file, unit: String(item.unit || '').slice(0, 10), flags };
   });
-  const notes = (Array.isArray(raw && raw.notes) ? raw.notes : []).map(x => String(x).slice(0, 300)).slice(0, 20);
+  const notes = (Array.isArray(raw && (raw.n || raw.notes)) ? (raw.n || raw.notes) : []).map(x => String(x).slice(0, 300)).slice(0, 20);
   return { fields: out, notes };
+}
+
+// ---------------- 字段间互相核对 ----------------
+// 自相矛盾的值打上提示、置信度压到 0.45 以下（默认不勾选回填）
+function crossCheck(out) {
+  const num = k => out[k] && typeof out[k].value === 'number' && out[k].value > 0 ? out[k].value : null;
+  const bad = (k, msg) => { if (!out[k]) return; out[k].flags.push(msg); out[k].conf = Math.min(out[k].conf, 0.45); };
+  [['designVertDepth', 'designDepth', '设计垂深大于设计井深'], ['designHorizLen', 'designDepth', '设计水平段长不小于设计井深'],
+    ['designTechCasing', 'designDepth', '设计技套下深不小于设计井深'], ['vertDepth', 'footage', '垂深大于实际进尺'],
+    ['horizLen', 'footage', '水平段长不小于实际进尺'], ['techCasing', 'footage', '技套下深不小于实际进尺']]
+    .forEach(([a, b, msg]) => { const x = num(a), y = num(b); if (x && y && (a.endsWith('VertDepth') || a === 'vertDepth' ? x > y : x >= y)) bad(a, msg); });
+  const range = (k, lo, hi, msg) => { const v = num(k); if (v != null && (v < lo || v > hi)) bad(k, msg); };
+  range('maxIncl', 0, 100, '最大井斜超出 0～100°');
+  range('pressureCoef', 0.5, 2.5, '地层压力系数超出常见范围 0.5～2.5');
+  range('mudDensity', 0.8, 2.6, '钻井液密度超出常见范围 0.8～2.6 g/cm³');
+  const rows = out.designSections && out.designSections.value;
+  if (Array.isArray(rows)) {
+    const msgs = [];
+    rows.forEach((r, i) => {
+      if (r.phase !== i + 1) msgs.push('开次不连续（第 ' + (i + 1) + ' 行是 ' + r.phase + ' 开）');
+      if (r.from != null && r.to != null && r.to <= r.from) msgs.push(r.phase + ' 开井段止点不大于起点');
+      const prev = rows[i - 1];
+      if (prev && prev.to != null && r.from != null && Math.abs(r.from - prev.to) > 1) msgs.push(r.phase + ' 开起点与上一开止点不衔接');
+    });
+    const last = rows[rows.length - 1], dd = num('designDepth');
+    if (dd && last.to != null && Math.abs(last.to - dd) > Math.max(5, dd * 0.01)) msgs.push('最后一开止点 ' + last.to + ' 米与设计井深 ' + dd + ' 米不一致');
+    const ph = num('phase');
+    if (ph && rows.length !== ph) msgs.push('井身结构 ' + rows.length + ' 开，与开次 ' + ph + ' 不一致');
+    msgs.forEach(m => bad('designSections', m));
+  }
+  return out;
 }
 
 // ---------------- 本地词典解析 ----------------
@@ -177,7 +380,7 @@ function localParse(rules, docs, ctx) {
   const out = {};
   const NAMES = rules.fields.flatMap(f => [f.label, ...f.aliases]).filter(n => n && n.length >= 2);
   const docLines = docs.map(d => ({ d, lines: String(d.text || '').split('\n').map(l => l.split(/\s*[|｜]\s*/).map(c => c.trim())) }));
-  rules.fields.filter(f => f.enabled).forEach(f => {
+  rules.fields.filter(f => f.enabled && f.type !== 'table').forEach(f => {   // 表格字段本地认不全，只交给大模型
     const names = [f.label, ...f.aliases].filter(n => n && n.length >= 2);
     for (const name of names) {
       for (const { d, lines } of docLines) {
@@ -215,11 +418,12 @@ function localParse(rules, docs, ctx) {
             const flags = [];
             let value = coerce(f, raw, unit, ctx, flags);
             if (value === undefined) continue;
-            let conf = how === 'inline' ? 0.45 : 0.55;
-            if (value instanceof Number) { value = +value; conf = 0.3; }
+            let conf = how === 'inline' ? 0.45 : 0.55, unconverted = false;
+            if (value instanceof Number) { value = +value; conf = 0.3; unconverted = true; }
             if (flags.some(x => /不在定额库队伍名单/.test(x))) conf = 0.3;
             if (name !== f.label) flags.push('按别名「' + name + '」匹配');
             out[f.k] = { value, conf, evidence: evidence.slice(0, 200), file: d.name, unit, flags };
+            if (unconverted) Object.defineProperty(out[f.k], 'unconverted', { value: true });   // 不进 JSON，只给 plan 判断
             return;
           }
         }
@@ -229,17 +433,64 @@ function localParse(rules, docs, ctx) {
   return { fields: out, notes: ['本地词典解析只认表格和「名称：数值」写法，不理解上下文，请逐项核对。'] };
 }
 
+// ---------------- AI 解析 ----------------
+async function aiRun(rules, docs, ctx, opts) {
+  const p = plan(rules, docs, ctx, opts);
+  const fields = Object.assign({}, p.settled);
+  const notes = [];
+  let usage = null;
+  if (p.ask.length) {
+    const { system, user } = prompt(rules, p, ctx);
+    // 输出预算按要问的字段数给：普通字段约 70 token，表格约 420 token；被截断就放开到 AI_MAX_TOKENS 再试一次
+    const budget = 200 + p.ask.reduce((s, f) => s + (f.type === 'table' ? 420 : 70), 0);
+    let res;
+    try { res = await llm.chatJSON(system, user, { maxTokens: budget }); }
+    catch (e) { if (!e.truncated) throw e; res = await llm.chatJSON(system, user); }
+    usage = res.usage;
+    const n = normalize(res.data, rules, docs, ctx, p.snippets, new Set(p.ask.map(f => f.k)));
+    Object.assign(fields, n.fields);
+    notes.push(...n.notes);
+  }
+  // 大模型没给出、本地词典有候选的，退回本地结果（低置信度，默认不勾）
+  p.ask.forEach(f => {
+    const x = p.local[f.k];
+    if (!fields[f.k] && x) fields[f.k] = Object.assign({}, x, { conf: Math.min(x.conf, 0.4), flags: x.flags.concat('大模型未给出，取本地词典结果') });
+  });
+  crossCheck(fields);
+  const missing = [...p.ask, ...p.skipped].map(f => f.k).filter(k => !fields[k]);
+  const c = llm.config();
+  return { fields, notes, missing, stats: statsOf(p), usage, mode: 'ai', model: c.vendor + ' · ' + c.model };
+}
+
+// 同一批资料 + 同一版规则 + 同样的问法，直接复用上次结果
+const CACHE = new Map();
+const CACHE_MAX = 50;
+function cacheKey(rules, docs, opts) {
+  const h = crypto.createHash('sha1');
+  h.update(JSON.stringify([opts.scope || 'snippet', opts.only || null, rules.updatedAt, rules.examples.length,
+    rules.examples.filter(e => e.status === 'on').length, docs.map(d => [d.name, d.text])]));
+  return h.digest('hex');
+}
+
 // ---------------- 入口 ----------------
-async function run(rules, docs, mode) {
+async function run(rules, docs, mode, opts) {
+  opts = opts || {};
   const ctx = context();
   docs = docs.filter(d => d && String(d.text || '').trim());
   if (!docs.length) throw Object.assign(new Error('没有可解析的文字内容'), { status: 400 });
   const t0 = Date.now();
-  if (mode === 'local') return Object.assign(localParse(rules, docs, ctx), { mode: 'local', model: '本地词典', ms: Date.now() - t0 });
-  const { system, user } = buildPrompt(rules, docs, ctx);
-  const { data, usage } = await llm.chatJSON(system, user);
-  const c = llm.config();
-  return Object.assign(normalize(data, rules, docs, ctx), { mode: 'ai', model: c.vendor + ' · ' + c.model, ms: Date.now() - t0, usage });
+  if (mode === 'local') {
+    const r = localParse(rules, docs, ctx);
+    crossCheck(r.fields);
+    return Object.assign(r, { mode: 'local', model: '本地词典', ms: Date.now() - t0 });
+  }
+  const key = cacheKey(rules, docs, opts);
+  if (CACHE.has(key)) return Object.assign(JSON.parse(CACHE.get(key)), { cached: true, usage: null, ms: Date.now() - t0 });
+  const r = await aiRun(rules, docs, ctx, opts);
+  r.ms = Date.now() - t0;
+  CACHE.set(key, JSON.stringify(r));
+  if (CACHE.size > CACHE_MAX) CACHE.delete(CACHE.keys().next().value);
+  return r;
 }
 
-module.exports = { run, buildPrompt, normalize, localParse, context };
+module.exports = { run, buildPrompt, normalize, localParse, context, plan, pickSnippets, crossCheck };

@@ -7,7 +7,7 @@ const store = require('../store');
 const { defaults } = require('./defaults');
 
 const KEY = 'ai-rules';
-const TYPES = new Set(['num', 'text', 'bool', 'enum']);
+const TYPES = new Set(['num', 'text', 'bool', 'enum', 'table']);
 const STATUS = new Set(['on', 'pending', 'off']);
 
 const str = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
@@ -28,6 +28,8 @@ function cleanField(f, base) {
     note: str(f.note, 500)
   };
   if (base.options) out.options = base.options;
+  if (base.cols) out.cols = base.cols;
+  out.type = base.type;   // 类型决定前端控件和取值清洗，不允许在管理页改
   return out;
 }
 
