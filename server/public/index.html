@@ -723,12 +723,13 @@ main.full{padding-bottom:26px}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:22px 0 8px;padding-top:16px;border-top:1px solid var(--line-2)">
         <h3 style="margin:0">一井一策定额补充</h3>
         <div style="display:flex;align-items:center;gap:10px">
-          <span class="sub" id="owpMsg"></span>
+          <span class="sub" id="owpSupMsg"></span>
           <span class="eyebrow">同区块 ≥2 口井 · 中位数补入</span>
+          <button class="btn ghost mini" id="owpSupRestore" type="button" hidden></button>
         </div>
       </div>
       <p class="sub" style="margin:0 0 8px">按「井型—区块—开次」分组，样本满 2 口取中位数生成建议；已有附件1定额不被覆盖。</p>
-      <div class="scroll"><table id="owpTbl"></table></div>
+      <div class="scroll"><table id="owpSupTbl"></table></div>
     </div>
   </div>
 
@@ -1319,7 +1320,7 @@ const F = [
     [{k:'designDepth',l:'设计井深（米）',t:'num'},{k:'designVertDepth',l:'设计垂深（米）',t:'num'},{k:'maxIncl',l:'最大井斜（°）',t:'num',step:.1}],
     [{k:'designHorizLen',l:'设计水平段长（米）',t:'num'},{k:'designDisp',l:'设计水平位移（米）',t:'num'},{k:'designTechCasing',l:'设计技套下深（米）',t:'num'}],
     [{k:'targetFm',l:'目的层',t:'text'},{k:'pressureCoef',l:'地层压力系数',t:'num',step:.01},{k:'mudDensity',l:'设计钻井液密度（g/cm³）',t:'num',step:.01}],
-    [{k:'rigModel',l:'设计钻机',t:'select',blank:'— 未填 —',opt:['50型','70型']},{k:'powerMode',l:'动力方式',t:'select',blank:'— 未填 —',opt:['网电','柴油','网电+柴油']}],
+    [{k:'rigModel',l:'钻机类型',t:'select',blank:'— 未填 —',opt:['50型','70型']},{k:'powerMode',l:'动力方式',t:'select',blank:'— 未填 —',opt:['网电','柴油','网电+柴油']}],
     [{k:'designSections',l:'分开次井身结构',t:'sections'}]
   ]}
 ];
@@ -3618,10 +3619,12 @@ const OWP_FIELDS=[['mifei','米费',2],['mat','一般材料',2],['energy','能�
   ['lube','润滑油',2],['repair','项修',2],['prodwater','生产水',2],['sewage','生活污水',2],
   ['dayfoot','日进尺',2],['gm_avg','毛益率',2]];
 
+// 从定额补充里删除的样本井（按井记录 id）：只是不再参与汇总，井本身的考核与自定义定额不变
+const owpSkip=()=>Array.isArray(Q.owpSkip)?Q.owpSkip:(Q.owpSkip=[]);
 function owpGroups(){
-  const g={};
+  const g={}, skip=owpSkip();
   WELLS.forEach(r=>{
-    if(!r.w.oneWellOnePolicy) return;
+    if(!r.w.oneWellOnePolicy||skip.includes(r.id)) return;
     const k=r.w.wellType+'|'+r.w.block+'|'+r.w.phase;
     (g[k]=g[k]||{wellType:r.w.wellType,block:r.w.block,phase:r.w.phase,wells:[]}).wells.push(r);
   });
@@ -3638,9 +3641,21 @@ function owpGroups(){
   }).sort((a,b)=> b.wells.length-a.wells.length);
 }
 
+function owpSupMsg(msg,ok){
+  const om=$('#owpSupMsg'); if(!om) return;
+  om.textContent=msg; om.className='sub '+(ok?'pos':''); setTimeout(()=>{ if(om.textContent===msg) om.textContent=''; },6000);
+}
 function renderOneWellOnePolicy(){
-  const T=$('#owpTbl'); if(!T) return;
+  const T=$('#owpSupTbl'); if(!T) return;
   const groups=owpGroups();
+  // 已删除且仍是一井一策的样本井：给一个恢复入口
+  const skipped=WELLS.filter(r=>r.w.oneWellOnePolicy&&owpSkip().includes(r.id));
+  const rb=$('#owpSupRestore');
+  rb.hidden=!skipped.length; rb.textContent='恢复已删除样本（'+skipped.length+' 口）';
+  rb.onclick=()=>{
+    if(!confirm('恢复已删除的 '+skipped.length+' 口样本井（'+skipped.map(r=>r.w.wellNo||'未命名').join('、')+'）到定额补充？')) return;
+    Q.owpSkip=[]; saveQuota(); renderOneWellOnePolicy(); owpSupMsg('已恢复 '+skipped.length+' 口样本井。',true);
+  };
   if(!groups.length){
     T.innerHTML='<tbody><tr><td class="dim" style="font-family:var(--sans)">暂无一井一策样本井。在「单井考核」勾选「一井一策」并录入自定义定额、提交入库后，样本将汇总到此处。</td></tr></tbody>';
     return;
@@ -3659,8 +3674,9 @@ function renderOneWellOnePolicy(){
           return '<td'+(already?' class="dim"':'')+'>'+(fk==='gm_avg'?pct(v,dec):v.toFixed(dec))+(already?' <span class="sub">已有</span>':'')+'</td>';
         }).join('')+
         '<td style="text-align:left">'+status+'</td>'+
-        '<td><button class="btn ghost mini" data-owp="'+gi+'" '+(grp.ready?'':'disabled')+'>'+
-          (grp.ready?'补充入库':'样本不足(＜2口)')+'</button></td></tr>';
+        '<td style="white-space:nowrap"><button class="btn ghost mini" data-owp="'+gi+'" '+(grp.ready?'':'disabled')+'>'+
+          (grp.ready?'补充入库':'样本不足(＜2口)')+'</button> '+
+          '<button class="btn ghost mini" data-owp-skip="'+gi+'" type="button">删除</button></td></tr>';
     }).join('')+'</tbody>';
 
   T.querySelectorAll('[data-owp]').forEach(btn=>{
@@ -3682,9 +3698,17 @@ function renderOneWellOnePolicy(){
       if(filled){ seedAccFromQuota(cur, grp.wells); writeQuotaFromAcc(cur, false); }
       const msg=filled?('已将 '+grp.wellType+' · '+grp.block+' · '+grp.phase+'开 的 '+filled+' 个字段补入定额库（中位数，样本 '+grp.wells.length+' 口），并按样本井进尺铺底累计科目。'):
         '该组合定额库字段均已存在，未作覆盖。';
-      const om=$('#owpMsg'); if(om){ om.textContent=msg; om.className='sub '+(filled?'pos':''); setTimeout(()=>{ if(om.textContent===msg) om.textContent=''; },6000); }
+      owpSupMsg(msg,filled);
       if(filled) saveQuota();
       renderQuota(); renderResults();
+    };
+  });
+  T.querySelectorAll('[data-owp-skip]').forEach(btn=>{
+    btn.onclick=()=>{
+      const grp=groups[+btn.dataset.owpSkip], name=grp.wellType+' · '+grp.block+' · '+grp.phase+'开';
+      if(!confirm('从一井一策定额补充中删除「'+name+'」（样本井：'+grp.wells.map(r=>r.w.wellNo||'未命名').join('、')+'）？\n\n只是不再参与定额补充汇总；井本身的考核和自定义定额不变，已补入定额库的数据也不变。之后可点「恢复已删除样本」找回。')) return;
+      owpSkip().push(...grp.wells.map(r=>r.id).filter(id=>!owpSkip().includes(id)));
+      saveQuota(); renderOneWellOnePolicy(); owpSupMsg('已从定额补充中删除「'+name+'」。',true);
     };
   });
 }
@@ -4834,7 +4858,7 @@ const OWP_ITEMS=[['dayfoot','平均日进尺','米/天',1],['mifei','米费','�
   ['lube','润滑油','元/米',4],['repair','项修','元/米',4],['prodwater','生产水','元/米',4],['sewage','生活污水','元/米',4],['gm_avg','毛益率平均指标','%',2]];
 const OWP_DAILY={mifei:'元/(人·天)',mat:'元/天',lube:'元/天',repair:'元/天',prodwater:'元/天',sewage:'元/天'};
 const OWP_F=[
-  [{k:'wellNo',l:'井号 / 测算名称',t:'text'},{k:'wellType',l:'井型',t:'select',opt:['定向井','水平井','直井']},{k:'phase',l:'开次',t:'select',opt:[2,3,4]}],
+  [{k:'wellNo',l:'井号',t:'text'},{k:'wellType',l:'井型',t:'select',opt:['定向井','水平井','直井']},{k:'phase',l:'开次',t:'select',opt:[2,3,4]}],
   [{k:'block',l:'区块（新区块名）',t:'text'},{k:'planDays',l:'策划周期（天）',t:'num',step:.1}],
   ...F.find(g=>g.show).rows
 ];
@@ -4987,7 +5011,7 @@ function renderOwpList(){
   $('#owpCount').textContent=OWPC.length?OWPC.length+' 条':'';
   if(!OWPC.length){ T.innerHTML='<tbody><tr><td class="dim" style="font-family:var(--sans)">还没有保存的测算。填好参数后点右上角「保存测算」。</td></tr></tbody>'; return; }
   const v=(r,k,d)=>{ const x=r.res&&r.res[k]; return x!=null?fmt(x,d):'—'; };
-  T.innerHTML='<thead><tr><th class="l">井号 / 名称</th><th class="l">井型 · 区块 · 开次</th><th>日进尺</th><th>米费</th><th>能耗</th><th>毛益率</th><th>可信度</th><th class="l">已关联</th><th>保存时间</th><th></th></tr></thead><tbody>'+
+  T.innerHTML='<thead><tr><th class="l">井号</th><th class="l">井型 · 区块 · 开次</th><th>日进尺</th><th>米费</th><th>能耗</th><th>毛益率</th><th>可信度</th><th class="l">已关联</th><th>保存时间</th><th></th></tr></thead><tbody>'+
     [...OWPC].sort((a,b)=>b.at-a.at).map(r=>'<tr'+(r.id===OWP.id?' style="background:var(--accent-soft)"':'')+'><td class="l">'+esc(owpName(r))+'</td>'+
       '<td class="l">'+esc(r.inp.wellType+' · '+(r.inp.block||'未填区块')+' · '+r.inp.phase+'开')+'</td>'+
       '<td>'+v(r,'dayfoot',1)+'</td><td>'+v(r,'mifei',4)+'</td><td>'+v(r,'energy',2)+'</td><td>'+(r.res&&r.res.gm_avg!=null?fmt(r.res.gm_avg,2)+'%':'—')+'</td>'+
