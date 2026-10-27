@@ -305,6 +305,23 @@ function locate(evidence, docs) {
   return docs.find(d => squash(d.text).includes(ev)) || null;
 }
 
+// 提示词让大模型给「换算后的值 + 原单位」，可模型不总照做。词典里有这个原单位的换算时，拿依据里的原数判断：
+// 依据里只有这个值本身 → 模型没换算，照常换算；否则（依据里是换算前的数，或看不出来）按约定当作已换算，不再乘系数
+const EV_NUM_RE = /-?\d+(?:,\d{3})*(?:\.\d+)?/g;
+function modelConverted(f, item) {
+  if (f.type !== 'num' || item.value == null) return null;
+  const u = String(item.unit || '').trim();
+  if (!u || squash(u) === squash(f.unit)) return null;
+  const c = f.conv.find(x => squash(x.unit) === squash(u));
+  if (!c || c.factor === 1) return null;
+  const s = String(item.value).replace(/[，,]/g, '').trim();
+  const v = typeof item.value === 'number' ? item.value : /^-?\d+(\.\d+)?$/.test(s) ? parseFloat(s) : NaN;   // 「125万元」这种带单位的字符串是原数，照常换算
+  if (!isFinite(v)) return null;
+  const nums = (String(item.evidence || '').replace(/，/g, ',').match(EV_NUM_RE) || []).map(x => parseFloat(x.replace(/,/g, '')));
+  const has = x => nums.some(n => Math.abs(n - x) <= Math.max(1e-9, Math.abs(x) * 0.01));
+  return has(v) && !has(v / c.factor) ? null : { value: v, conv: c };
+}
+
 // 大模型原始输出 → 统一结构。认紧凑数组 [值, 单位, 置信度, 依据, 片段号]，也认旧的对象写法。
 // 依据在原文里找不到的，置信度压到 0.4 以下
 function normalize(raw, rules, docs, ctx, snippets, askKeys) {
@@ -320,8 +337,9 @@ function normalize(raw, rules, docs, ctx, snippets, askKeys) {
     else if (Array.isArray(item) && item.length && item.every(rowLike)) item = { value: item };   // 表格值直接给成行数组，没带单位/依据
     else if (Array.isArray(item)) item = { value: item[0], unit: item[1], conf: item[2], evidence: item[3], file: item[4] };
     if (item == null || typeof item !== 'object') item = { value: item };
-    const flags = [];
-    let value = coerce(f, item.value, item.unit, ctx, flags);
+    const flags = [], pre = modelConverted(f, item);
+    if (pre) flags.push('已按 1' + pre.conv.unit + '=' + round(pre.conv.factor) + f.unit + ' 换算（大模型已换算）');
+    let value = pre ? round(pre.value) : coerce(f, item.value, item.unit, ctx, flags);
     if (value === undefined) return;
     let conf = Math.max(0, Math.min(1, Number(item.conf != null ? item.conf : item.confidence)));
     if (!isFinite(conf)) conf = 0.5;
