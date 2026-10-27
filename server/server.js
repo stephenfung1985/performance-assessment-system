@@ -222,6 +222,9 @@ app.put('/api/filings/:year', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ================= AI 解析导入（单井资料 → 录入表候选值；规则调教） =================
+app.use('/api/ai', require('./lib/ai'));
+
 app.get('/api/health', (req, res) => res.json({ ok: true, time: Date.now() }));
 
 // ================= 前端静态页面 =================
@@ -232,6 +235,7 @@ app.get('*', (req, res, next) => {
 });
 
 app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.too.large') return res.status(413).json({ error: '文件或请求体过大' });
   console.error('[server] 未捕获错误：', err);
   res.status(500).json({ error: 'internal_error' });
 });

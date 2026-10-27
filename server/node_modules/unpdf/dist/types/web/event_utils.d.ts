@@ -1,0 +1,68 @@
+export type WaitOnEventOrTimeoutParameters = {
+    /**
+     * - The event target, can for example be:
+     * `window`, `document`, a DOM element, or an {EventBus} instance.
+     */
+    target: object;
+    /**
+     * - The name of the event.
+     */
+    name: string;
+    /**
+     * - The delay, in milliseconds, after which the
+     * timeout occurs (if the event wasn't already dispatched).
+     */
+    delay: number;
+};
+/**
+ * Simple event bus for an application. Listeners are attached using the `on`
+ * and `off` methods. To raise an event, the `dispatch` method shall be used.
+ */
+export class EventBus {
+    /**
+     * @param {string} eventName
+     * @param {Function} listener
+     * @param {object} [options]
+     */
+    on(eventName: string, listener: Function, options?: object): void;
+    /**
+     * @param {string} eventName
+     * @param {Function} listener
+     * @param {object} [options]
+     */
+    off(eventName: string, listener: Function, options?: object): void;
+    /**
+     * @param {string} eventName
+     * @param {object} data
+     */
+    dispatch(eventName: string, data: object): void;
+    #private;
+}
+/**
+ * NOTE: Only used in the Firefox built-in pdf viewer.
+ */
+export class FirefoxEventBus extends EventBus {
+    constructor(globalEventNames: any, externalServices: any, isInAutomation: any);
+    dispatch(eventName: any, data: any): void;
+    #private;
+}
+/**
+ * @typedef {object} WaitOnEventOrTimeoutParameters
+ * @property {object} target - The event target, can for example be:
+ *   `window`, `document`, a DOM element, or an {EventBus} instance.
+ * @property {string} name - The name of the event.
+ * @property {number} delay - The delay, in milliseconds, after which the
+ *   timeout occurs (if the event wasn't already dispatched).
+ */
+/**
+ * Allows waiting for an event or a timeout, whichever occurs first.
+ * Can be used to ensure that an action always occurs, even when an event
+ * arrives late or not at all.
+ * @param {WaitOnEventOrTimeoutParameters} params
+ * @returns {Promise} A promise that is resolved with a {WaitOnType} value.
+ */
+export function waitOnEventOrTimeout({ target, name, delay }: WaitOnEventOrTimeoutParameters): Promise<any>;
+export namespace WaitOnType {
+    let EVENT: string;
+    let TIMEOUT: string;
+}
