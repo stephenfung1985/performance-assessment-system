@@ -1297,7 +1297,7 @@ const F = [
     [{k:'designDepth',l:'设计井深（米）',t:'num'},{k:'designVertDepth',l:'设计垂深（米）',t:'num'},{k:'maxIncl',l:'最大井斜（°）',t:'num',step:.1}],
     [{k:'designHorizLen',l:'设计水平段长（米）',t:'num'},{k:'designDisp',l:'设计水平位移（米）',t:'num'},{k:'designTechCasing',l:'设计技套下深（米）',t:'num'}],
     [{k:'targetFm',l:'目的层',t:'text'},{k:'pressureCoef',l:'地层压力系数',t:'num',step:.01},{k:'mudDensity',l:'设计钻井液密度（g/cm³）',t:'num',step:.01}],
-    [{k:'rigModel',l:'设计钻机',t:'select',blank:'— 未填 —',opt:['50型','70型']},{k:'powerMode',l:'动力方式',t:'select',blank:'— 未填 —',opt:['网电','柴油','网电+柴油']}],
+    [{k:'rigModel',l:'钻机类型',t:'select',blank:'— 未填 —',opt:['50型','70型']},{k:'powerMode',l:'动力方式',t:'select',blank:'— 未填 —',opt:['网电','柴油','网电+柴油']}],
     [{k:'designSections',l:'分开次井身结构',t:'sections'}]
   ]}
 ];
@@ -4800,7 +4800,7 @@ const OWP_ITEMS=[['dayfoot','平均日进尺','米/天',1],['mifei','米费','�
   ['lube','润滑油','元/米',4],['repair','项修','元/米',4],['prodwater','生产水','元/米',4],['sewage','生活污水','元/米',4],['gm_avg','毛益率平均指标','%',2]];
 const OWP_DAILY={mifei:'元/(人·天)',mat:'元/天',lube:'元/天',repair:'元/天',prodwater:'元/天',sewage:'元/天'};
 const OWP_F=[
-  [{k:'wellNo',l:'井号 / 测算名称',t:'text'},{k:'wellType',l:'井型',t:'select',opt:['定向井','水平井','直井']},{k:'phase',l:'开次',t:'select',opt:[2,3,4]}],
+  [{k:'wellNo',l:'井号',t:'text'},{k:'wellType',l:'井型',t:'select',opt:['定向井','水平井','直井']},{k:'phase',l:'开次',t:'select',opt:[2,3,4]}],
   [{k:'block',l:'区块（新区块名）',t:'text'},{k:'planDays',l:'策划周期（天）',t:'num',step:.1}],
   ...F.find(g=>g.show).rows
 ];
@@ -4953,7 +4953,7 @@ function renderOwpList(){
   $('#owpCount').textContent=OWPC.length?OWPC.length+' 条':'';
   if(!OWPC.length){ T.innerHTML='<tbody><tr><td class="dim" style="font-family:var(--sans)">还没有保存的测算。填好参数后点右上角「保存测算」。</td></tr></tbody>'; return; }
   const v=(r,k,d)=>{ const x=r.res&&r.res[k]; return x!=null?fmt(x,d):'—'; };
-  T.innerHTML='<thead><tr><th class="l">井号 / 名称</th><th class="l">井型 · 区块 · 开次</th><th>日进尺</th><th>米费</th><th>能耗</th><th>毛益率</th><th>可信度</th><th class="l">已关联</th><th>保存时间</th><th></th></tr></thead><tbody>'+
+  T.innerHTML='<thead><tr><th class="l">井号</th><th class="l">井型 · 区块 · 开次</th><th>日进尺</th><th>米费</th><th>能耗</th><th>毛益率</th><th>可信度</th><th class="l">已关联</th><th>保存时间</th><th></th></tr></thead><tbody>'+
     [...OWPC].sort((a,b)=>b.at-a.at).map(r=>'<tr'+(r.id===OWP.id?' style="background:var(--accent-soft)"':'')+'><td class="l">'+esc(owpName(r))+'</td>'+
       '<td class="l">'+esc(r.inp.wellType+' · '+(r.inp.block||'未填区块')+' · '+r.inp.phase+'开')+'</td>'+
       '<td>'+v(r,'dayfoot',1)+'</td><td>'+v(r,'mifei',4)+'</td><td>'+v(r,'energy',2)+'</td><td>'+(r.res&&r.res.gm_avg!=null?fmt(r.res.gm_avg,2)+'%':'—')+'</td>'+
