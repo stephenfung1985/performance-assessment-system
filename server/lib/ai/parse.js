@@ -10,6 +10,7 @@
 //   4. 输出用紧凑数组，依据只写片段号 + 不超过 40 字原文
 //   同一批资料、同一版规则的结果在内存里缓存，重复解析不再调用大模型。
 // 不出网的「本地词典解析」（mode=local）只做第 1 步，用于没配大模型或资料涉密时兜底。
+// 本地词典 = 人工调教的规则 + 已生效的 AI 学习规则（learn.js 从大模型结果里学来，追加在人工规则之后）。
 // ============================================================
 const crypto = require('crypto');
 const store = require('../store');
@@ -210,7 +211,10 @@ function convert(f, num, unit, flags) {
   const u = String(unit || '').trim();
   if (!u || u === f.unit || squash(u) === squash(f.unit)) return num;
   const c = f.conv.find(x => squash(x.unit) === squash(u));
-  if (c) { if (c.factor !== 1) flags.push('已按 1' + c.unit + '=' + round(c.factor) + f.unit + ' 换算'); return num * c.factor; }
+  if (c) {
+    if (c.factor !== 1) flags.push('已按 1' + c.unit + '=' + round(c.factor) + f.unit + ' 换算' + (f.learnedConv && f.learnedConv[c.unit] ? '（AI 学习规则）' : ''));
+    return num * c.factor;
+  }
   flags.push('原单位「' + u + '」不在词典里，未换算，请核对');
   return null;   // 交给调用方降置信度
 }
@@ -321,6 +325,7 @@ function normalize(raw, rules, docs, ctx, snippets, askKeys) {
     if (value === undefined) return;
     let conf = Math.max(0, Math.min(1, Number(item.conf != null ? item.conf : item.confidence)));
     if (!isFinite(conf)) conf = 0.5;
+    const modelConf = conf;
     if (value instanceof Number) { value = +value; conf = Math.min(conf, 0.4); }
     if (flags.some(x => /不在定额库队伍名单/.test(x))) conf = Math.min(conf, 0.3);
     const evidence = String(item.evidence || '').trim().slice(0, 300);
@@ -332,6 +337,7 @@ function normalize(raw, rules, docs, ctx, snippets, askKeys) {
     if (hit && !docs.some(d => d.name === file)) file = hit.name;
     if (!file && docs.length === 1) file = docs[0].name;
     out[k] = { value, conf: round(conf), evidence, file, unit: String(item.unit || '').slice(0, 10), flags };
+    Object.defineProperty(out[k], 'modelConf', { value: round(modelConf) });   // 模型自评、压低前的置信度，不进 JSON，给 learn.observe 判断能不能学
   });
   const notes = (Array.isArray(raw && (raw.n || raw.notes)) ? (raw.n || raw.notes) : []).map(x => String(x).slice(0, 300)).slice(0, 20);
   return { fields: out, notes };
@@ -382,6 +388,7 @@ function localParse(rules, docs, ctx) {
   const docLines = docs.map(d => ({ d, lines: String(d.text || '').split('\n').map(l => l.split(/\s*[|｜]\s*/).map(c => c.trim())) }));
   rules.fields.filter(f => f.enabled && f.type !== 'table').forEach(f => {   // 表格字段本地认不全，只交给大模型
     const names = [f.label, ...f.aliases].filter(n => n && n.length >= 2);
+    const learned = f.learned || {};   // learn.apply() 追加的 AI 学习叫法 → 规则 id
     for (const name of names) {
       for (const { d, lines } of docLines) {
         for (let i = 0; i < lines.length; i++) {
@@ -421,9 +428,10 @@ function localParse(rules, docs, ctx) {
             let conf = how === 'inline' ? 0.45 : 0.55, unconverted = false;
             if (value instanceof Number) { value = +value; conf = 0.3; unconverted = true; }
             if (flags.some(x => /不在定额库队伍名单/.test(x))) conf = 0.3;
-            if (name !== f.label) flags.push('按别名「' + name + '」匹配');
+            if (name !== f.label) flags.push('按别名「' + name + '」匹配' + (learned[name] ? '（AI 学习规则）' : ''));
             out[f.k] = { value, conf, evidence: evidence.slice(0, 200), file: d.name, unit, flags };
             if (unconverted) Object.defineProperty(out[f.k], 'unconverted', { value: true });   // 不进 JSON，只给 plan 判断
+            if (learned[name]) Object.defineProperty(out[f.k], 'learnedId', { value: learned[name] });   // 给 learn.observe 记用量、记反驳
             return;
           }
         }
@@ -467,7 +475,7 @@ const CACHE = new Map();
 const CACHE_MAX = 50;
 function cacheKey(rules, docs, opts) {
   const h = crypto.createHash('sha1');
-  h.update(JSON.stringify([opts.scope || 'snippet', opts.only || null, rules.updatedAt, rules.examples.length,
+  h.update(JSON.stringify([opts.scope || 'snippet', opts.only || null, rules.updatedAt, rules.learnedAt || null, rules.examples.length,
     rules.examples.filter(e => e.status === 'on').length, docs.map(d => [d.name, d.text])]));
   return h.digest('hex');
 }

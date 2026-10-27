@@ -7,6 +7,9 @@
 //   POST /api/ai/rules/reset     恢复出厂规则（保留已沉淀的示例）
 //   POST /api/ai/prompt          预览按已保存规则拼出的提示词（admin，试解析用）
 //   POST /api/ai/examples        把人工纠正结果沉淀为示例；editor 提交的需 admin 审核后才生效
+//   GET  /api/ai/learned         从大模型结果里学到的词典候选（admin）
+//   POST /api/ai/learned/:id     {action:'adopt'|'reject'|'revoke'|'delete'} 采纳 / 驳回 / 撤销 / 删除（admin）
+//   PUT  /api/ai/learned/settings {autoHits} 被几份不同资料印证后自动生效，0 = 只人工采纳（admin）
 // 上传不用 multipart：前端逐个文件直接 POST 二进制，省掉 multer 一整套依赖。
 // ============================================================
 const express = require('express');
@@ -14,6 +17,7 @@ const auth = require('../auth');
 const rules = require('./rules');
 const llm = require('./llm');
 const parse = require('./parse');
+const learn = require('./learn');
 const { extract, ACCEPT } = require('./extract');
 
 const MAX_FILE_MB = Number(process.env.AI_MAX_FILE_MB) || 15;
@@ -65,12 +69,17 @@ router.post('/parse', async (req, res) => {
   if (opts.scope === 'full' && !(opts.only && opts.only.length)) return res.status(400).json({ error: '扩大范围重试需要指定字段' });
   BUSY.add(req.user.username);
   try {
-    const r = await parse.run(rules.load(), docs, mode, opts);
+    const R = learn.apply(rules.load());   // 人工规则 + 已生效的学习规则
+    const r = await parse.run(R, docs, mode, opts);
+    // 解析成功后从结果里积累经验；学习出错不影响这次解析结果
+    try { const l = learn.observe(R, docs, r); if (l) r.learned = l; } catch (e) { console.error('[ai] 学习规则记录失败：' + e.message); }
     const s = r.stats, u = r.usage;
     console.log('[ai] ' + req.user.username + ' 解析 ' + docs.length + ' 份资料（' + total + ' 字）→ ' + Object.keys(r.fields).length + ' 个字段，' + r.model + '，' + r.ms + 'ms' +
       (r.cached ? '，命中缓存' : '') +
       (s ? '；' + (s.scope === 'full' ? '扩大范围' : '本地定 ' + s.local + ' 项，') + '问 ' + s.asked + ' 项，发送 ' + s.snippets + ' 段 ' + s.sentChars + ' 字' : '') +
-      (u ? '；token 输入 ' + u.input + '（缓存命中 ' + u.cacheHit + '）输出 ' + u.output : ''));
+      (u ? '；token 输入 ' + u.input + '（缓存命中 ' + u.cacheHit + '）输出 ' + u.output : '') +
+      (r.learned && (r.learned.added || r.learned.confirmed || r.learned.auto || r.learned.against)
+        ? '；学习规则 新增 ' + r.learned.added + ' 印证 ' + r.learned.confirmed + ' 自动生效 ' + r.learned.auto + ' 反驳 ' + r.learned.against : ''));
     res.json(r);
   } catch (e) { fail(res, e); }
   finally { BUSY.delete(req.user.username); }
@@ -86,9 +95,21 @@ router.put('/rules', auth.requireAdmin, (req, res) => {
 router.post('/prompt', auth.requireAdmin, (req, res) => {
   const docs = (Array.isArray((req.body || {}).docs) ? req.body.docs : []).slice(0, MAX_DOCS)
     .map(d => ({ name: String((d && d.name) || '资料').slice(0, 120), text: String((d && d.text) || '') }));
-  res.json(parse.buildPrompt(rules.load(), docs, parse.context()));
+  res.json(parse.buildPrompt(learn.apply(rules.load()), docs, parse.context()));
 });
 router.post('/rules/reset', auth.requireAdmin, (req, res) => res.json(rules.reset(req.user.username)));
+
+router.get('/learned', auth.requireAdmin, (req, res) => res.json(learn.view(rules.load())));
+router.put('/learned/settings', auth.requireAdmin, (req, res) => {
+  learn.setAuto((req.body || {}).autoHits);
+  res.json(learn.view(rules.load()));
+});
+router.post('/learned/:id', auth.requireAdmin, (req, res) => {
+  try {
+    learn.act(String(req.params.id).slice(0, 40), String((req.body || {}).action || ''), req.user.username);
+    res.json(learn.view(rules.load()));
+  } catch (e) { fail(res, e); }
+});
 
 router.post('/examples', (req, res) => {
   try { res.json(rules.addExample(req.body || {}, req.user.username, req.user.role === 'admin')); }

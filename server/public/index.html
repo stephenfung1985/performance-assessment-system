@@ -5216,7 +5216,20 @@ function aimStatsNote(R){
     : ['本地词典直接定下 '+s.local+' 项','问大模型 '+s.asked+' 项'+(s.asked?'（发送 '+s.snippets+' 段片段、共 '+s.sentChars+' 字）':'（未调用大模型）')];
   if(R.cached) parts.push('同一批资料已解析过，直接复用结果，未消耗 token');
   else if(u) parts.push('token：输入 '+u.input+(u.cacheHit?'（其中缓存命中 '+u.cacheHit+'）':'')+' · 输出 '+u.output);
-  return '<div class="sub" style="margin-top:8px">'+parts.map(esc).join(' · ')+'</div>';
+  return '<div class="sub" style="margin-top:8px">'+parts.map(esc).join(' · ')+'</div>'+aimLearnedNote(R);
+}
+// 这次大模型结果给本地词典积累了多少经验（学习规则）
+function aimLearnedNote(R){
+  const l=R.learned; if(!l) return '';
+  const p=[];
+  if(l.used) p.push('本地词典用上 '+l.used+' 条 AI 学习规则');
+  if(l.added) p.push('新学到 '+l.added+' 条词典候选');
+  if(l.confirmed) p.push('印证 '+l.confirmed+' 条已有候选');
+  if(l.auto) p.push(l.auto+' 条被多份资料印证后自动生效');
+  if(l.against) p.push(l.against+' 条学习规则被这次结果反驳');
+  if(!p.length) return '';
+  const admin=AI_STATUS&&AI_STATUS.admin;
+  return '<div class="sub" style="margin-top:4px">'+esc(p.join(' · '))+((l.added||l.confirmed||l.against)?(admin?'，可在「解析规则 › AI 学习」审核':'，管理员审核后用于本地解析'):'')+'</div>';
 }
 // 片段里没找到的字段：勾选后「扩大范围重试」只问这几项、把整份资料发给大模型
 function aimMissingBox(R){
@@ -5316,7 +5329,8 @@ async function aimApply(){
    规则存服务器数据目录 ai-rules.json，整份读、整份存；保存后下一次解析立即生效。
    这里只做编辑，取值口径的说明见《AI解析导入与规则调教.md》。 */
 let AIR=null, AIR_TAB='fields', AIR_DIRTY=false;
-const AIR_TABS=[['fields','字段词典'],['terms','术语专名'],['rules','理解规则'],['examples','纠正示例'],['try','试解析']];
+let AIL=null, AIL_F='pending';   // AI 学习规则（/api/ai/learned），和人工规则分开存、分开操作，不走「保存规则」
+const AIR_TABS=[['fields','字段词典'],['terms','术语专名'],['rules','理解规则'],['examples','纠正示例'],['learned','AI 学习'],['try','试解析']];
 const AIR_KINDS=['区块','井型','队号','井号','缩写','其他'];
 const AIR_TYPE={num:'数值',text:'文本',bool:'是/否',enum:'枚举',table:'表格（每开一行）'};
 function airMsg(html,cls){ const m=$('#airMsg'); if(!m) return;
@@ -5359,15 +5373,17 @@ async function renderAiRules(){
     try{ const r=await apiFetch('/api/ai/rules'); if(!r.ok) throw new Error(await aiErr(r)); AIR=await r.json(); airDirty(false); }
     catch(e){ $('#airBody').innerHTML='<div class="note err"><b>读取失败：</b>'+esc(e.message)+'</div>'; return; }
   }
+  await airLoadLearned(); airTabs();
   airBody();
 }
 function airTabs(){ [...$('#airSeg').children].forEach(b=>{
-  const pend=b.dataset.tab==='examples'&&AIR?AIR.examples.filter(e=>e.status==='pending').length:0;
+  const pend=b.dataset.tab==='examples'&&AIR?AIR.examples.filter(e=>e.status==='pending').length
+    :b.dataset.tab==='learned'&&AIL?AIL.items.filter(x=>x.status==='pending').length:0;
   b.textContent=AIR_TABS.find(t=>t[0]===b.dataset.tab)[1]+(pend?'（'+pend+' 待审）':'');
   b.setAttribute('aria-pressed',b.dataset.tab===AIR_TAB); }); }
 function airBody(){
   const host=$('#airBody'); if(!AIR) return;
-  ({fields:airFields,terms:airTerms,rules:airRules,examples:airExamples,try:airTry})[AIR_TAB](host);
+  ({fields:airFields,terms:airTerms,rules:airRules,examples:airExamples,learned:airLearned,try:airTry})[AIR_TAB](host);
 }
 // 通用：表格里 data-i / data-p 的输入框直接写回 AIR[list][i][p]
 function airBind(host,list,after){
@@ -5385,8 +5401,8 @@ function airFields(host){
     AIR.fields.map((f,i)=>'<tr><td><input type="checkbox" data-i="'+i+'" data-p="enabled"'+(f.enabled?' checked':'')+' style="width:16px;height:16px;min-width:0;margin:0"></td>'+
       '<td style="min-width:120px"><input data-i="'+i+'" data-p="label" value="'+esc(f.label)+'"><div class="sub">'+esc(f.k)+'</div></td>'+
       '<td style="min-width:96px">'+AIR_TYPE[f.type]+(f.type==='num'?'<input data-i="'+i+'" data-p="unit" value="'+esc(f.unit)+'" placeholder="单位" style="margin-top:4px">':'')+'</td>'+
-      '<td style="min-width:220px"><textarea data-i="'+i+'" data-p="aliasesTxt">'+esc(f.aliases.join('、'))+'</textarea></td>'+
-      '<td style="min-width:170px">'+(f.type==='num'?'<input data-i="'+i+'" data-p="convTxt" value="'+esc(convText(f.conv))+'" placeholder="如 万元×10000">':'<span class="dim">—</span>')+'</td>'+
+      '<td style="min-width:220px"><textarea data-i="'+i+'" data-p="aliasesTxt">'+esc(f.aliases.join('、'))+'</textarea>'+ailOf(f.k,'alias')+'</td>'+
+      '<td style="min-width:170px">'+(f.type==='num'?'<input data-i="'+i+'" data-p="convTxt" value="'+esc(convText(f.conv))+'" placeholder="如 万元×10000">'+ailOf(f.k,'conv'):'<span class="dim">—</span>')+'</td>'+
       '<td><select data-i="'+i+'" data-p="pick"><option value="">不区分</option><option value="actual"'+(f.pick==='actual'?' selected':'')+'>实际值</option><option value="design"'+(f.pick==='design'?' selected':'')+'>设计值</option></select></td>'+
       '<td style="min-width:260px"><textarea data-i="'+i+'" data-p="note">'+esc(f.note)+'</textarea></td></tr>').join('')+
     '</tbody></table></div>';
@@ -5395,6 +5411,13 @@ function airFields(host){
     if(p==='convTxt'){ const r=convParse(inp.value); o.conv=r.ok; delete o.convTxt;
       inp.classList.toggle('bad',r.bad.length>0); inp.title=r.bad.length?'写法不对，已忽略：'+r.bad.join('，'):''; }
   });
+}
+// 字段词典里只读地列出这个字段已生效的 AI 学习规则，提醒它们在人工规则之外另存
+function ailOf(k,what){
+  if(!AIL) return '';
+  const on=AIL.items.filter(x=>x.k===k&&x.status==='on'&&(what==='alias'?x.alias&&!x.inDict&&!x.clash:x.conv));
+  if(!on.length) return '';
+  return '<div class="sub" style="margin-top:3px" title="在「AI 学习」页签管理">AI 学习：'+esc([...new Set(on.map(x=>what==='alias'?x.alias:convText([x.conv])))].join('、'))+'</div>';
 }
 function airTerms(host){
   host.innerHTML='<p class="sub" style="margin:0 0 10px">区块名、井型叫法、队号格式、井号命名规律、大港油区常见缩写。原样交给大模型作背景知识（本地词典解析不使用）。标「示例」的预置条目请按实际核实。</p>'+
@@ -5448,6 +5471,59 @@ function airExamples(host){
     airDirty(true); airBody(); airMsg('已添加，点「保存规则」后生效。');
   };
 }
+async function airLoadLearned(){
+  try{ const r=await apiFetch('/api/ai/learned'); if(!r.ok) throw new Error(await aiErr(r)); AIL=await r.json(); }
+  catch(e){ AIL={items:[],autoHits:0,minConf:0.7,error:e.message}; }
+}
+const AIL_ST={pending:['待审核','man'],on:['已生效','ai'],off:['已驳回','bad']};
+function airLearned(host){
+  if(!AIL){ host.innerHTML='<p class="sub">正在读取…</p>'; airLoadLearned().then(()=>{ airTabs(); if(AIR_TAB==='learned') airBody(); }); return; }
+  const F=[['pending','待审核'],['on','已生效'],['off','已驳回'],['all','全部']];
+  const list=AIL.items.filter(x=>AIL_F==='all'||x.status===AIL_F);
+  const cnt=v=>AIL.items.filter(x=>v==='all'||x.status===v).length;
+  host.innerHTML='<p class="sub" style="margin:0 0 10px">大模型解析成功后，系统回到原文看它把哪种写法认成了哪个字段、用的什么单位，记成本地词典的候选。'+
+    '只学置信度 ≥ '+Math.round(AIL.minConf*100)+'%、原文依据对得上、没有任何校验告警的结果，而且候选叫法必须能用本地词典<b>复现出大模型的值</b>才记下；同一份资料重复解析只算一次。'+
+    '生效的学习规则排在人工别名之后，本地解析命中时标「AI 学习规则」，资料里再遇到这种写法就不用问大模型。学习规则单独存放（ai-learned.json），「恢复默认」不影响。'+
+    '<b>这里的操作立即生效，不用点「保存规则」。</b></p>'+
+    (AIL.error?'<div class="note err" style="margin-bottom:10px"><b>读取失败：</b>'+esc(AIL.error)+'</div>':'')+
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">'+
+      '<div class="seg" id="ailSeg">'+F.map(([v,l])=>'<button type="button" data-f="'+v+'" aria-pressed="'+(AIL_F===v)+'">'+l+'（'+cnt(v)+'）</button>').join('')+'</div>'+
+      '<span style="flex:1"></span><label class="sub" style="display:inline-flex;align-items:center;gap:6px">被'+
+      '<input id="ailAuto" type="number" min="0" max="20" step="1" value="'+AIL.autoHits+'" style="width:56px">份不同资料印证、没被反驳也没有冲突的自动生效（0 = 只人工采纳）</label>'+
+      '<button class="btn ghost mini" id="ailAutoSave" type="button">保存</button></div>'+
+    (list.length?'<div class="scroll"><table class="airtbl"><thead><tr><th>状态</th><th>学到的规则</th><th>原文样例</th><th>印证</th><th></th></tr></thead><tbody>'+
+      list.map(x=>{ const st=AIL_ST[x.status];
+        const warn=[...(x.conflict.length?['同一写法也被学成「'+x.conflict.join('、')+'」，不会自动生效，请人工判断']:[]),
+          ...(x.inDict?['人工词典里已有这个叫法，这条可以删除']:[]),...(x.clash?['人工词典里这个叫法属于「'+x.clash+'」，这条不会生效']:[]),...(x.note?[x.note]:[])];
+        const btn=(a,l,ghost)=>'<button class="btn mini'+(ghost?' ghost':'')+'" type="button" data-ail="'+esc(x.id)+'" data-act="'+a+'">'+l+'</button>';
+        return '<tr><td style="width:84px"><span class="pill '+st[1]+'">'+st[0]+'</span>'+(x.auto?'<div class="sub" style="margin-top:3px">自动生效</div>':'')+'</td>'+
+          '<td style="min-width:220px"><b>'+esc(x.label)+'</b> <span class="dim">'+esc(x.k)+'</span>'+
+            (x.alias?'<div>资料写作「'+esc(x.alias)+'」</div>':'')+(x.conv?'<div>单位换算 '+esc(convText([x.conv]))+'</div>':'')+
+            warn.map(t=>'<span class="flag">'+esc(t)+'</span>').join('')+'</td>'+
+          '<td style="min-width:220px">'+x.samples.slice(-2).reverse().map(s=>'<div class="sub"><b>'+esc(s.file||'—')+'</b>'+(s.wellNo?' · '+esc(s.wellNo):'')+
+            ' · 「'+esc(s.evidence)+'」→ '+esc(typeof s.value==='number'?+s.value.toFixed(4):s.value)+'</div>').join('')+'</td>'+
+          '<td class="sub" style="white-space:nowrap"><div><b>'+x.hits+'</b> 份资料印证 · 本地用上 <b>'+x.used+'</b> 次</div>'+(x.against?'<div style="color:var(--neg)">被反驳 '+x.against+' 次</div>':'')+
+            '<div>首次 '+stamp(x.firstAt)+'</div><div>最近 '+stamp(x.lastAt)+'</div>'+(x.decidedAt?'<div>'+(x.decidedBy?esc(x.decidedBy)+' ':'')+'处理于 '+stamp(x.decidedAt)+'</div>':'')+'</td>'+
+          '<td style="white-space:nowrap;width:1%">'+(x.status==='pending'?btn('adopt','采纳')+' '+btn('reject','驳回',1):x.status==='on'?btn('revoke','撤销',1):btn('revoke','恢复待审',1))+
+            ' '+btn('delete','删除',1)+'</td></tr>'; }).join('')+'</tbody></table></div>'
+    :'<p class="sub">'+(AIL.items.length?'这一类没有规则。':'还没有学到规则。用「AI 解析」导入资料后，大模型补上的字段会在这里出现。')+'</p>');
+  host.querySelectorAll('#ailSeg button').forEach(b=>b.onclick=()=>{ AIL_F=b.dataset.f; airBody(); });
+  $('#ailAutoSave').onclick=async()=>{
+    try{ const r=await apiFetch('/api/ai/learned/settings',{method:'PUT',body:JSON.stringify({autoHits:+$('#ailAuto').value||0})});
+      if(!r.ok) throw new Error(await aiErr(r));
+      AIL=await r.json(); airTabs(); airBody(); airMsg(AIL.autoHits?'已保存：被 '+AIL.autoHits+' 份不同资料印证后自动生效。':'已保存：学习规则只在人工采纳后生效。','ok'); }
+    catch(e){ airMsg('<b>保存失败：</b>'+esc(e.message),'err'); }
+  };
+  host.querySelectorAll('[data-ail]').forEach(b=>b.onclick=async()=>{
+    const a=b.dataset.act, L={adopt:'已采纳，下一次解析生效。',reject:'已驳回，以后再学到这条也不会生效。',revoke:'已退回待审核。',delete:'已删除。'};
+    if(a==='delete'&&!confirm('删除这条学习规则？之后大模型再给出同样的结果，会重新作为候选出现。')) return;
+    b.disabled=true;
+    try{ const r=await apiFetch('/api/ai/learned/'+encodeURIComponent(b.dataset.ail),{method:'POST',body:JSON.stringify({action:a})});
+      if(!r.ok) throw new Error(await aiErr(r));
+      AIL=await r.json(); airTabs(); airBody(); airMsg(L[a],'ok'); }
+    catch(e){ b.disabled=false; airMsg('<b>操作失败：</b>'+esc(e.message),'err'); }
+  });
+}
 let AIR_TRY={text:'',mode:'',docs:[]};
 function airTry(host){
   const st=AI_STATUS||{};
@@ -5494,7 +5570,8 @@ function airTry(host){
         '<div class="scroll" style="margin-top:8px"><table class="aitbl"><thead><tr><th class="l">字段</th><th class="l">解析值</th><th class="c">置信度</th><th class="l">来源 · 原文依据</th></tr></thead><tbody>'+
         ks.map(k=>{ const x=R.fields[k]; return '<tr><td class="l">'+esc(FM[k].l)+'</td><td class="l">'+esc(aiShow(FM[k],x.value))+'</td><td class="c">'+aiConfPill(x.conf)+'</td>'+
           '<td class="ev"><b>'+esc(x.file||'—')+'</b>'+(x.evidence?' · '+esc(x.evidence):'')+(x.flags||[]).map(t=>'<span class="flag">'+esc(t)+'</span>').join('')+'</td></tr>'; }).join('')+
-        '</tbody></table></div>';
+        '</tbody></table></div>'+aimLearnedNote(R);
+      if(R.learned) airLoadLearned().then(airTabs);
     }catch(e){ out.innerHTML='<div class="note err">网络中断或服务器无响应</div>'; }
     finally{ b.disabled=false; b.textContent='试解析'; }
   };
