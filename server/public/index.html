@@ -101,7 +101,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .rail.has-user .brand{padding-top:12px}
 .rail.has-user .brand .mark{padding-left:0;min-height:0}
 .railfoot{margin-top:auto;padding:14px 18px 0;border-top:1px solid var(--line-2);color:var(--muted);font-size:10.5px;line-height:1.5}
-.iconbtn{position:fixed;top:13px;z-index:30;width:31px;height:31px;display:inline-flex;align-items:center;justify-content:center;
+.iconbtn{position:fixed;top:13px;z-index:40;width:31px;height:31px;display:inline-flex;align-items:center;justify-content:center;
   background:var(--material);-webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);
   border:1px solid var(--line);border-radius:var(--r-sm);color:var(--ink-2);cursor:pointer;padding:0;box-shadow:var(--shadow-sm);
   transition:background .18s ease,color .18s ease,transform .18s var(--ease)}
@@ -287,6 +287,12 @@ main.full{padding-bottom:26px}
 /* 完成井考核库：置顶折叠条，与切块考核「数据填报」同一形制；展开时自身滚动，不挤压下方两栏 */
 #storeCard{flex:0 0 auto}
 #storeCard .foldbody{max-height:38vh;overflow:auto}
+/* 定额库：并入滚动定额页顶部的折叠条，形制同完成井考核库，默认收起 */
+#quotaCard .qtools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:0;max-width:100%}
+#quotaCard .qtools>*{max-width:100%}
+#quotaCard #qSeg{overflow-x:auto}
+.foldhead b{white-space:nowrap}
+#p-roll.qopen>:not(.phead):not(#quotaCard){display:none}
 .disc{display:inline-flex;align-items:center;gap:5px;background:none;border:0;color:var(--accent);cursor:pointer;font-size:12.5px;font-weight:500;padding:2px 4px;border-radius:6px}
 .disc:hover{background:var(--fill)}
 .disc svg{transition:transform .28s var(--ease)}
@@ -413,13 +419,12 @@ main.full{padding-bottom:26px}
   <button class="navbtn" data-go="dash"><span class="n">01</span>切块考核</button>
   <button class="navbtn" data-go="well"><span class="n">02</span>单井考核</button>
   <button class="navbtn" data-go="pre"><span class="n">03</span>兑现登记</button>
-  <button class="navbtn" data-go="quota"><span class="n">04</span>定额库</button>
-  <button class="navbtn" data-go="roll"><span class="n">05</span>滚动定额</button>
-  <button class="navbtn" data-go="team"><span class="n">06</span>班子绩效</button>
-  <button class="navbtn" data-go="tinfo"><span class="n">07</span>队伍信息</button>
-  <button class="navbtn" data-go="bak"><span class="n">08</span>数据备份</button>
-  <button class="navbtn" data-go="owp"><span class="n">09</span>一井一策</button>
-  <button class="navbtn" data-go="airules" id="navAiRules" hidden><span class="n">10</span>解析规则</button>
+  <button class="navbtn" data-go="roll"><span class="n">04</span>滚动定额</button>
+  <button class="navbtn" data-go="team"><span class="n">05</span>班子绩效</button>
+  <button class="navbtn" data-go="tinfo"><span class="n">06</span>队伍信息</button>
+  <button class="navbtn" data-go="bak"><span class="n">07</span>数据备份</button>
+  <button class="navbtn" data-go="owp"><span class="n">08</span>一井一策</button>
+  <button class="navbtn" data-go="airules" id="navAiRules" hidden><span class="n">09</span>解析规则</button>
   <div class="railfoot">
     依据：2026年经营责任制实施办法 · 附件1 考核标准及相关定额 · 附件2 大港油区单井经营考核办法（试行）· 附件3 钻井队班子绩效考核办法
   </div>
@@ -657,41 +662,7 @@ main.full{padding-bottom:26px}
   </div>
 </section>
 
-<!-- ============ 04 定额库 ============ -->
-<section class="page" id="p-quota">
-  <div class="phead">
-    <div>
-      <h2>定额库</h2>
-      <p>附件1 全量定额标准，按「井型—区块—开次」索引。</p>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <span class="pill ai" id="quotaVer" style="white-space:nowrap"></span>
-      <button class="btn ghost" id="quotaSaveVer" type="button" title="把当前定额快照保存为新版本（版本号自动递增）">保存版本</button>
-      <select id="quotaVerSel" title="历史版本（恢复后覆盖当前定额）" style="background:var(--surface-2);border:1px solid var(--line);border-radius:2px;padding:5px 9px;max-width:220px"></select>
-      <button class="btn ghost" id="quotaLoadVer" type="button" disabled>恢复所选</button>
-      <input type="search" id="qSearch" placeholder="搜索区块 / 井型…" style="background:var(--surface-2);border:1px solid var(--line);border-radius:2px;padding:5px 9px;width:180px">
-      <div class="seg" id="qSeg"></div>
-    </div>
-  </div>
-  <div class="card" style="margin-top:14px">
-    <div class="body"><div class="scroll"><table id="quotaTbl"></table></div></div>
-  </div>
-
-  <div class="card" style="margin-top:14px">
-    <header><h3>一井一策定额补充</h3>
-      <div style="display:flex;align-items:center;gap:10px">
-        <span class="sub" id="owpMsg"></span>
-        <span class="eyebrow">同区块 ≥2 口井 · 中位数补入</span>
-      </div>
-    </header>
-    <div class="body">
-      <p class="sub" style="margin:0 0 8px">按「井型—区块—开次」分组，样本满 2 口取中位数生成建议；已有附件1定额不被覆盖。</p>
-      <div class="scroll"><table id="owpTbl"></table></div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ 05 滚动定额 ============ -->
+<!-- ============ 04 滚动定额（含定额库） ============ -->
 <section class="page" id="p-roll">
   <div class="phead">
     <div>
@@ -704,7 +675,42 @@ main.full{padding-bottom:26px}
     </div>
   </div>
 
-  <div class="kpis" id="rollKpi"></div>
+  <div class="card foldbar closed" id="quotaCard">
+    <button class="foldhead" id="quotaFold" type="button">
+      <span class="fh-l">
+        <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 8l4.5 4.5L14.5 8"/></svg>
+        <b>定额库</b>
+        <span class="sub" id="quotaCount"></span>
+      </span>
+      <span class="sub" id="quotaFoldAct">展开定额库</span>
+    </button>
+    <div class="foldbody">
+      <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px">
+        <p class="sub" style="margin:0">附件1 全量定额标准，按「井型—区块—开次」索引。</p>
+        <div class="qtools">
+          <span class="pill ai" id="quotaVer" style="white-space:nowrap"></span>
+          <button class="btn ghost" id="quotaSaveVer" type="button" title="把当前定额快照保存为新版本（版本号自动递增）">保存版本</button>
+          <select id="quotaVerSel" title="历史版本（恢复后覆盖当前定额）" style="background:var(--surface-2);border:1px solid var(--line);border-radius:2px;padding:5px 9px;max-width:220px"></select>
+          <button class="btn ghost" id="quotaLoadVer" type="button" disabled>恢复所选</button>
+          <input type="search" id="qSearch" placeholder="搜索区块 / 井型…" style="background:var(--surface-2);border:1px solid var(--line);border-radius:2px;padding:5px 9px;width:180px">
+          <div class="seg" id="qSeg"></div>
+        </div>
+      </div>
+      <div class="scroll"><table id="quotaTbl"></table></div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:22px 0 8px;padding-top:16px;border-top:1px solid var(--line-2)">
+        <h3 style="margin:0">一井一策定额补充</h3>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="sub" id="owpMsg"></span>
+          <span class="eyebrow">同区块 ≥2 口井 · 中位数补入</span>
+        </div>
+      </div>
+      <p class="sub" style="margin:0 0 8px">按「井型—区块—开次」分组，样本满 2 口取中位数生成建议；已有附件1定额不被覆盖。</p>
+      <div class="scroll"><table id="owpTbl"></table></div>
+    </div>
+  </div>
+
+  <div class="kpis" id="rollKpi" style="margin-top:16px"></div>
 
   <div class="split" style="margin-top:16px">
     <div class="grid sticky">
@@ -1413,7 +1419,7 @@ function renderForm(){
     });
     cf.appendChild(wrap2);
     cf.appendChild(owpFormBox());
-    cf.appendChild(Object.assign(el('p','sub'),{textContent:'区块无附件1定额或为新开发区块时启用。填写该井的实测/预算定额，或到左侧「一井一策」按设计书测算后关联过来；完井后由「定额库 › 一井一策定额补充」页汇总同区块 2 口以上样本，形成正式定额补入定额库。'}));
+    cf.appendChild(Object.assign(el('p','sub'),{textContent:'区块无附件1定额或为新开发区块时启用。填写该井的实测/预算定额，或到左侧「一井一策」按设计书测算后关联过来；完井后由「滚动定额 › 定额库 › 一井一策定额补充」汇总同区块 2 口以上样本，形成正式定额补入定额库。'}));
     host.appendChild(cf);
   }
 
@@ -3121,8 +3127,16 @@ function renderQuotaVer(){
   }
 }
 let qTab='米费';
+/* 定额库折叠条（滚动定额页顶部）：与完成井考核库同一形制，默认收起 */
+function paintQuotaFold(){ const card=$('#quotaCard'), btn=$('#quotaFold'); if(!card) return;
+  const open=!card.classList.contains('closed');
+  $('#p-roll').classList.toggle('qopen',open);   // 展开定额库时隐藏滚动定额其余内容，收起后恢复
+  $('#quotaFoldAct').textContent=open?'收起定额库':'展开定额库'; btn.setAttribute('aria-expanded',open); }
+function saveQuotaFold(){ try{ localStorage.setItem('kh-quota-fold', $('#quotaCard').classList.contains('closed')?'1':'0'); }catch(e){} }
+function openQuotaFold(){ const card=$('#quotaCard'); if(card){ card.classList.remove('closed'); saveQuotaFold(); paintQuotaFold(); } }
 function renderQuota(){
   ensureQuotaVersion();
+  const qc=$('#quotaCount'); if(qc) qc.textContent=Q.blocks.length+' 个「井型-区块-开次」组合 · '+Q.version;
   const qv=$('#quotaVer');
   if(qv && !qv.dataset.done){
     qv.dataset.done='1';
@@ -4501,12 +4515,13 @@ $('#dashPdf').onclick=exportDashPdf;
 function syncPhH(){ const ph=document.querySelector('#p-well .phead'); if(ph&&ph.offsetHeight) document.documentElement.style.setProperty('--phH',(ph.offsetHeight-1)+'px'); }
 window.addEventListener('resize',syncPhH);
 function go(id){
+  // 定额库已并入「滚动定额」顶部折叠条：旧入口跳过去并展开
+  if(id==='quota'){ id='roll'; openQuotaFold(); }
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on', p.id==='p-'+id));
   document.querySelectorAll('.navbtn').forEach(b=>b.setAttribute('aria-current', b.dataset.go===id));
   document.querySelector('main').classList.toggle('full', id==='well');
   if(id==='pre') renderPre();
-  if(id==='quota') renderQuota();
-  if(id==='roll') renderRoll();
+  if(id==='roll'){ renderRoll(); renderQuota(); }
   if(id==='team') renderTeam();
   if(id==='tinfo') renderTinfo();
   if(id==='bak') renderBak();
@@ -4610,12 +4625,14 @@ $('#qSearch').addEventListener('input',renderQuota);
 const NAV_ICON={
   dash:'<path d="M4.2 16.4v-4.1M10 16.4V5.6M15.8 16.4V9.1"/><path d="M2.6 18.2h14.8"/>',
   well:'<rect x="3.6" y="2.9" width="12.8" height="14.2" rx="2.6"/><path d="M6.7 7.1h6.6M6.7 10h6.6M6.7 12.9h4.2"/>',
-  ai:'<path d="M7.9 3.1l1.28 3.22 3.22 1.28-3.22 1.28L7.9 12.1 6.62 8.88 3.4 7.6l3.22-1.28z"/><path d="M14.1 11.2l.72 1.78 1.78.72-1.78.72-.72 1.78-.72-1.78-1.78-.72 1.78-.72z"/>',
+  airules:'<path d="M7.9 3.1l1.28 3.22 3.22 1.28-3.22 1.28L7.9 12.1 6.62 8.88 3.4 7.6l3.22-1.28z"/><path d="M14.1 11.2l.72 1.78 1.78.72-1.78.72-.72 1.78-.72-1.78-1.78-.72 1.78-.72z"/>',
   quota:'<rect x="2.8" y="3.7" width="14.4" height="12.6" rx="2.6"/><path d="M2.8 8.2h14.4M2.8 12.2h14.4M7.9 3.7v12.6"/>',
   roll:'<path d="M16 8.1A6.3 6.3 0 0 0 4.6 6.1"/><path d="M4 11.9a6.3 6.3 0 0 0 11.4 2"/><path d="M4.3 2.9v3.3h3.3M15.7 17.1v-3.3h-3.3"/>',
   team:'<circle cx="7.5" cy="7" r="2.7"/><path d="M2.9 16.3c0-2.7 2.1-4.3 4.6-4.3s4.6 1.6 4.6 4.3"/><path d="M13.1 4.9a2.7 2.7 0 0 1 .3 5.2"/><path d="M14.3 12.2c1.9.4 3 1.8 3 4"/>',
   tinfo:'<rect x="3.4" y="3.2" width="13.2" height="13.6" rx="2.4"/><path d="M6.6 7h6.8M6.6 10h6.8M6.6 13h4.2"/><path d="M13.6 13.6l1 1 2-2"/>',
-  pre:'<path d="M3.4 5.6h13.2a1.9 1.9 0 0 1 1.9 1.9v7.1a1.9 1.9 0 0 1-1.9 1.9H3.4a1.9 1.9 0 0 1-1.9-1.9V7.5A1.9 1.9 0 0 1 3.4 5.6z"/><path d="M1.5 9.2h17M5 12.9h3.2"/><path d="M13.4 2.6l2.4 2.4-2.4 2.4"/>'
+  pre:'<path d="M3.4 5.6h13.2a1.9 1.9 0 0 1 1.9 1.9v7.1a1.9 1.9 0 0 1-1.9 1.9H3.4a1.9 1.9 0 0 1-1.9-1.9V7.5A1.9 1.9 0 0 1 3.4 5.6z"/><path d="M1.5 9.2h17M5 12.9h3.2"/><path d="M13.4 2.6l2.4 2.4-2.4 2.4"/>',
+  bak:'<rect x="2.6" y="3.4" width="14.8" height="4.2" rx="1.4"/><path d="M4 7.6v7.1a1.9 1.9 0 0 0 1.9 1.9h8.2a1.9 1.9 0 0 0 1.9-1.9V7.6"/><path d="M8.1 10.9h3.8"/>',
+  owp:'<rect x="4" y="2.6" width="12" height="14.8" rx="2.6"/><rect x="6.7" y="5.3" width="6.6" height="2.8" rx=".8"/><path d="M7.3 11.2h.01M10 11.2h.01M12.7 11.2h.01M7.3 14.3h.01M10 14.3h.01M12.7 14.3h.01"/>'
 };
 (function(){
   document.querySelectorAll('.navbtn').forEach(b=>{
@@ -4748,6 +4765,13 @@ renderRollRules();
     btn.onclick=()=>{ card.classList.toggle('closed');
       try{ localStorage.setItem('kh-store-fold', card.classList.contains('closed')?'1':'0'); }catch(e){}
       paint(); };
+  })();
+  (function(){
+    const btn=$('#quotaFold');
+    let saved=null; try{ saved=localStorage.getItem('kh-quota-fold'); }catch(e){}
+    if(saved==='0') $('#quotaCard').classList.remove('closed');
+    paintQuotaFold();
+    btn.onclick=()=>{ $('#quotaCard').classList.toggle('closed'); saveQuotaFold(); paintQuotaFold(); };
   })();
   $('#preWellSel').addEventListener('change',e=>{ PRE_WELL=e.target.value; preMsg(''); renderPre(); });
   // 单井考核 →「去兑现登记」：带上当前井号，直接定位到该井的登记明细
