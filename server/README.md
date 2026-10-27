@@ -17,6 +17,7 @@ server/
     store.js          JSON 文件存储层（每类数据一个 data/*.json，原子写入）
     auth.js            账号/登录/JWT session
     seed.js             首次启动的初始化（写入附件1 定额基线、建默认管理员）
+    ai/                 单井资料 AI 解析导入：文本抽取、大模型调用、本地词典解析、解析规则
   public/
     index.html          前端页面（与桌面那份同源，替换即可升级）
   data/                  运行时生成，存实际数据，不进版本库（线上用 .env 的 DATA_DIR 放到代码目录之外）
@@ -64,6 +65,29 @@ curl -b cookies.txt -X POST http://localhost:4000/api/users/admin/password \
 `role` 只分 `admin`（能管账号）和 `editor`（能读写井库/定额库/填报数据），
 没有更细的权限——够内部小团队用；真要按主体单位拆权限，在 `lib/auth.js` 和各路由
 里加判断即可，`requireAuth` 中间件已经把 `req.user.role` 挂好了。
+
+## AI 解析导入（可选）
+
+「单井考核 › AI 导入资料」把 Word / PDF / Excel 单井资料解析后回填录入表，管理员在「解析规则」页调教。
+不配置时只能用不出网的「本地词典」解析；要接大模型，在 `.env` 里加（默认 DeepSeek，其它厂商与私有化部署
+的写法见 `.env.example`）：
+
+```
+AI_PROVIDER=deepseek
+AI_BASE_URL=https://api.deepseek.com
+AI_MODEL=deepseek-chat
+AI_API_KEY=sk-...
+AI_VENDOR=DeepSeek
+```
+
+注意：
+- 同样**每行只写 `键=值`**，不要跟 `#` 注释。
+- 依赖里的 `xlsx` 从 `https://cdn.sheetjs.com` 下载（npm 上的旧版有已知漏洞），`npm install` 时服务器要能访问这个地址；
+  访问不了就在本机装好依赖后把整个 `node_modules` 一起传上去。
+- 服务器要能访问大模型接口（DeepSeek 为 `api.deepseek.com:443`）。轻量服务器默认放行出站，一般不用改防火墙。
+- 解析规则存在数据目录的 `ai-rules.json`，随「数据备份」一起打包。
+
+使用与调教方法见仓库根目录的《AI解析导入与规则调教.md》。
 
 ## 部署到公网（国内云厂商，先不用域名）
 
@@ -281,7 +305,7 @@ journalctl -u kaohe -n 20     # 确认数据目录已是 /var/lib/kaohe/data，�
 ## 数据备份
 
 所有数据就是数据目录（默认 `data/`，线上为 `DATA_DIR`）下的几个 JSON 文件（`wells.json` 井库、`quota.json`
-定额库、`filings-<年份>.json` 月度填报、`users.json` 账号），定期整份拷走
+定额库、`filings-<年份>.json` 月度填报、`users.json` 账号、`ai-rules.json` AI 解析规则），定期整份拷走
 （`cp -r data/ 备份路径/data-$(date +%F)/`）就是完整备份，恢复直接拷回去重启
 服务即可，不需要数据库层面的导出导入。
 

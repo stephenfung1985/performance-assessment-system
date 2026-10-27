@@ -356,6 +356,43 @@ main.full{padding-bottom:26px}
   .f2,.f3{grid-template-columns:1fr}
   .kpis{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
 }
+/* ---------- AI 解析导入 / 解析规则 ---------- */
+.provev{font-size:10.5px;color:var(--muted);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help}
+.provev b{font-weight:500;color:var(--pos)}
+.aimask{position:fixed;inset:0;z-index:180;display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;
+  background:rgba(0,0,0,.32);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);overflow:auto}
+.aibox{width:min(1080px,100%);background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-card);box-shadow:0 24px 60px rgba(0,0,0,.28)}
+.aibox>header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line-2)}
+.aibox>header h3{font-size:16px;letter-spacing:-.014em}
+.aibox>.body{padding:16px 18px}
+.aibox>footer{display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--line-2)}
+.aibox>footer .grow{flex:1 1 auto}
+.aidrop{border:1.5px dashed var(--line);border-radius:var(--r);padding:22px 16px;text-align:center;color:var(--muted);cursor:pointer;
+  transition:border-color .18s ease,background .18s ease}
+.aidrop b{color:var(--ink);font-weight:590;font-size:13.5px}
+.aidrop:hover,.aidrop.on{border-color:var(--accent);background:var(--accent-soft)}
+.aifiles{margin:10px 0 0;padding:0;list-style:none}
+.aifiles li{display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid var(--line-2);font-size:12.5px}
+.aifiles li .nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aifiles li .w{display:block;color:var(--signal);font-size:11px;white-space:normal}
+.aitbl td{vertical-align:top}
+.aitbl td.ev{text-align:left;white-space:normal;min-width:220px;max-width:380px;color:var(--ink-2);line-height:1.5}
+.aitbl td.ev b{font-weight:500;color:var(--muted)}
+.aitbl tr.conflict td{background:var(--signal-soft)}
+.aitbl tr.skip td{color:var(--muted)}
+.aitbl input[type=checkbox]{width:16px;height:16px;margin:0;min-width:0;accent-color:var(--accent)}
+.aitbl td.val input,.aitbl td.val select{min-width:118px;text-align:left;background:var(--surface-2)}
+.pill.hi{background:var(--pos-soft);border-color:transparent;color:var(--pos)}
+.pill.mid{background:var(--signal-soft);border-color:transparent;color:var(--signal)}
+.pill.lo{background:var(--neg-soft);border-color:transparent;color:var(--neg)}
+.flag{display:block;font-size:10.5px;color:var(--signal);margin-top:2px;white-space:normal}
+.airtbl td{vertical-align:top;text-align:left;white-space:normal}
+.airtbl th{text-align:left}
+.airtbl td input{text-align:left}
+.airtbl textarea{min-height:46px;font-family:var(--sans);font-size:12px;line-height:1.5;padding:5px 8px}
+.airtbl input.bad{border-color:var(--neg)}
+.aiprompt{white-space:pre-wrap;font-family:var(--mono);font-size:11.5px;line-height:1.6;background:var(--surface-2);border-radius:var(--r-sm);
+  padding:12px;max-height:420px;overflow:auto;margin-top:10px}
 </style>
 
 </head>
@@ -381,6 +418,7 @@ main.full{padding-bottom:26px}
   <button class="navbtn" data-go="team"><span class="n">06</span>班子绩效</button>
   <button class="navbtn" data-go="tinfo"><span class="n">07</span>队伍信息</button>
   <button class="navbtn" data-go="bak"><span class="n">08</span>数据备份</button>
+  <button class="navbtn" data-go="airules" id="navAiRules" hidden><span class="n">09</span>解析规则</button>
   <div class="railfoot">
     依据：2026年经营责任制实施办法 · 附件1 考核标准及相关定额 · 附件2 大港油区单井经营考核办法（试行）· 附件3 钻井队班子绩效考核办法
   </div>
@@ -837,6 +875,27 @@ main.full{padding-bottom:26px}
 </section>
 
 
+<!-- ============ 09 解析规则（AI 解析导入的调教台，仅管理员） ============ -->
+<section class="page" id="p-airules">
+  <div class="phead">
+    <div>
+      <h2>解析规则</h2>
+      <p>单井资料 AI 解析导入的调教台：字段叫法与单位换算、行业术语、数据理解规则、人工纠正示例。保存后下一次解析立即生效，不用改代码。</p>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span class="sub" id="airMeta"></span>
+      <button class="btn ghost" id="airExport" type="button">导出</button>
+      <button class="btn ghost" id="airImport" type="button">导入…</button>
+      <input type="file" id="airFile" accept=".json,application/json" hidden>
+      <button class="btn ghost" id="airReset" type="button">恢复默认</button>
+      <button class="btn" id="airSave" type="button">保存规则</button>
+    </div>
+  </div>
+  <div id="airMsg"></div>
+  <div class="seg" id="airSeg" style="margin:4px 0 14px"></div>
+  <div class="card"><div class="body" id="airBody"></div></div>
+</section>
+
 </main>
 </div>
 
@@ -844,6 +903,7 @@ main.full{padding-bottom:26px}
 <script src="/vendor/jspdf.umd.min.js"></script>
 <script>
 const Q = {"blocks":[{"wellType":"定向井","block":"板桥（＜2500米）","phase":2,"mifei":0.361385,"mat":14.320613,"energy":81.641693,"lube":4.422542,"repair":2.105973,"sewage":2.105973,"dayfoot":158.28,"acc":{"foot":3957,"crew":38,"days":25,"mifei":54340,"mat":56666.666667,"energy":323056.179775,"lube":17500,"repair":8333.333333,"prodwater":0,"sewage":8333.333333,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"板桥（＜3500米）","phase":2,"mifei":0.342489,"mat":13.571825,"energy":74.144715,"lube":4.191299,"repair":1.995857,"prodwater":3.523058,"sewage":1.995857,"dayfoot":167.012664,"gm_avg":0.054671,"gm_110":0.060138,"gm_120":0.065605,"acc":{"foot":44234,"crew":38,"days":264.854167,"mifei":575687.016667,"mat":600336.111111,"energy":3279717.306404,"lube":185397.916667,"repair":88284.722222,"prodwater":155838.941604,"sewage":88284.722222,"gm":3244615.827121,"rev":59347750.073934,"n":0,"ids":[]}},{"wellType":"定向井","block":"板桥（≥3500米）","phase":2,"mifei":0.478019,"mat":18.942467,"energy":96.597,"lube":5.84988,"repair":2.785657,"prodwater":4.601816,"sewage":2.785657,"dayfoot":119.660584,"gm_avg":0.08277,"gm_110":0.091047,"gm_120":0.099324,"acc":{"foot":21858,"crew":38,"days":182.666667,"mifei":397044.266667,"mat":414044.444445,"energy":2111417.226,"lube":127866.666667,"repair":60888.888889,"prodwater":100586.492734,"sewage":60888.888889,"gm":3090663.785026,"rev":37340293,"n":0,"ids":[]}},{"wellType":"定向井","block":"港东","phase":2,"mifei":0.299859,"mat":11.882515,"energy":46.197,"lube":3.6696,"repair":1.747429,"prodwater":3.96545,"sewage":1.747429,"dayfoot":190.756474,"acc":{"foot":3835,"crew":38,"days":20.104167,"mifei":43698.416667,"mat":45569.444445,"energy":177165.495,"lube":14072.916667,"repair":6701.388889,"prodwater":15207.5,"sewage":6701.388889,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"港西","phase":2,"mifei":0.438441,"mat":17.374104,"energy":65.009812,"lube":5.365532,"repair":2.555015,"prodwater":4.401549,"sewage":2.555015,"dayfoot":130.462366,"gm_avg":0.105415,"gm_110":0.115957,"gm_120":0.126498,"acc":{"foot":12133,"crew":38,"days":93,"mifei":202144.8,"mat":210800,"energy":788764.044944,"lube":65100,"repair":31000,"prodwater":53404,"sewage":31000,"gm":2453789.552533,"rev":23277479,"n":0,"ids":[]}},{"wellType":"定向井","block":"港中","phase":2,"mifei":0.38501,"mat":15.256807,"energy":63.773294,"lube":4.711661,"repair":2.243648,"prodwater":3.578497,"sewage":2.243648,"dayfoot":148.567568,"acc":{"foot":5497,"crew":38,"days":37,"mifei":80423.2,"mat":83866.666667,"energy":350561.797753,"lube":25900,"repair":12333.333333,"prodwater":19671,"sewage":12333.333333,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"孔店","phase":2,"mifei":0.511752,"mat":20.27923,"energy":34.480976,"lube":6.262703,"repair":2.98224,"sewage":2.98224,"dayfoot":111.772819,"acc":{"foot":3444,"crew":38,"days":30.8125,"mifei":66974.05,"mat":69841.666667,"energy":118752.48,"lube":21568.75,"repair":10270.833333,"prodwater":0,"sewage":10270.833333,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"扣村","phase":2,"mifei":0.275441,"mat":10.914928,"energy":50.166,"lube":3.370787,"repair":1.605136,"sewage":1.605136,"dayfoot":207.666667,"acc":{"foot":2492,"crew":38,"days":12,"mifei":26083.2,"mat":27200,"energy":125013.672,"lube":8400,"repair":4000,"prodwater":0,"sewage":4000,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"唐家河","phase":2,"mifei":0.351651,"mat":13.934892,"energy":53.774246,"lube":4.303423,"repair":2.049249,"prodwater":4.032069,"sewage":2.049249,"dayfoot":162.661222,"acc":{"foot":3321,"crew":38,"days":20.416667,"mifei":44377.666667,"mat":46277.777778,"energy":178584.269663,"lube":14291.666667,"repair":6805.555556,"prodwater":13390.5,"sewage":6805.555556,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"王官屯","phase":2,"mifei":0.495641,"mat":19.640771,"energy":60.254706,"lube":6.065532,"repair":2.888349,"sewage":2.888349,"dayfoot":115.406195,"gm_avg":0.153903,"gm_110":0.169293,"gm_120":0.184684,"acc":{"foot":16455,"crew":38,"days":142.583333,"mifei":309919.133333,"mat":323188.888889,"energy":991491.192,"lube":99808.333333,"repair":47527.777778,"prodwater":0,"sewage":47527.777778,"gm":4627576.642784,"rev":30068132,"n":0,"ids":[]}},{"wellType":"定向井","block":"王徐庄","phase":2,"mifei":0.370827,"mat":14.69476,"energy":79.326,"lube":4.538088,"repair":2.160994,"sewage":2.160994,"dayfoot":154.25,"acc":{"foot":2468,"crew":38,"days":16,"mifei":34777.6,"mat":36266.666667,"energy":195776.568,"lube":11200,"repair":5333.333333,"prodwater":0,"sewage":5333.333333,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"新华","phase":2,"mifei":0.418208,"mat":16.572363,"energy":108.494566,"lube":5.117936,"repair":2.437112,"sewage":2.437112,"dayfoot":136.773897,"acc":{"foot":9956,"crew":38,"days":72.791667,"mifei":158219.966667,"mat":164994.444445,"energy":1080171.9,"lube":50954.166667,"repair":24263.888889,"prodwater":0,"sewage":24263.888889,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"羊二庄","phase":2,"mifei":0.28587,"mat":11.328184,"energy":49.905,"lube":3.49841,"repair":1.665909,"sewage":1.665909,"dayfoot":200.090909,"acc":{"foot":4402,"crew":38,"days":22,"mifei":47819.2,"mat":49866.666667,"energy":219681.81,"lube":15400,"repair":7333.333333,"prodwater":0,"sewage":7333.333333,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"羊三木","phase":2,"mifei":0.432865,"mat":17.153153,"energy":82.647,"lube":5.297297,"repair":2.522523,"sewage":2.522523,"dayfoot":132.142857,"acc":{"foot":2775,"crew":38,"days":21,"mifei":45645.6,"mat":47600,"energy":229345.425,"lube":14700,"repair":7000,"prodwater":0,"sewage":7000,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"枣园","phase":2,"mifei":0.383385,"mat":15.192423,"energy":83.736,"lube":4.691778,"repair":2.23418,"sewage":2.23418,"dayfoot":149.197183,"gm_avg":0.09268,"gm_110":0.101948,"gm_120":0.111216,"acc":{"foot":10593,"crew":38,"days":71,"mifei":154325.6,"mat":160933.333333,"energy":887015.448,"lube":49700,"repair":23666.666667,"prodwater":0,"sewage":23666.666667,"gm":1578394.174533,"rev":17030646,"n":0,"ids":[]}},{"wellType":"水平井","block":"板桥","phase":2,"mifei":0.358786,"mat":14.217623,"energy":64.656781,"lube":4.390737,"repair":2.090827,"prodwater":4.046454,"sewage":2.090827,"dayfoot":159.426552,"gm_avg":0.167215,"gm_110":0.183937,"gm_120":0.200658,"acc":{"foot":19739,"crew":38,"days":123.8125,"mifei":269118.85,"mat":280641.666667,"energy":1276260.21,"lube":86668.75,"repair":41270.833333,"prodwater":79872.963952,"sewage":41270.833333,"gm":5696073.035176,"rev":34064342.654516,"n":0,"ids":[]}},{"wellType":"水平井","block":"埕海","phase":2,"mifei":0.463371,"mat":18.362013,"energy":125.793,"lube":5.670622,"repair":2.700296,"sewage":2.700296,"dayfoot":123.443254,"acc":{"foot":4804,"crew":38,"days":38.916667,"mifei":84589.266667,"mat":88211.111111,"energy":604309.572,"lube":27241.666667,"repair":12972.222222,"prodwater":0,"sewage":12972.222222,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"水平井","block":"大港页岩油","phase":2,"mifei":0.309572,"mat":12.267422,"energy":100.2888,"lube":3.788468,"repair":1.804033,"sewage":1.804033,"dayfoot":184.771233,"gm_avg":-0.063116,"gm_110":-0.069428,"gm_120":-0.075739,"acc":{"foot":18574,"crew":38,"days":100.524306,"mifei":218499.630556,"mat":227855.092593,"energy":1862764.1712,"lube":70367.013889,"repair":33508.101852,"prodwater":0,"sewage":33508.101852,"gm":-1830656.710671,"rev":29004677,"n":0,"ids":[]}},{"wellType":"水平井","block":"枣园","phase":2,"mifei":0.594344,"mat":23.552083,"energy":88.236,"lube":7.273438,"repair":3.463542,"sewage":3.463542,"dayfoot":96.240602,"acc":{"foot":8000,"crew":38,"days":83.125,"mifei":180680.5,"mat":188416.666667,"energy":705888,"lube":58187.5,"repair":27708.333333,"prodwater":0,"sewage":27708.333333,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"板桥","phase":3,"mifei":0.45078,"mat":16.812309,"energy":90.522,"lube":5.516539,"repair":2.626923,"prodwater":4.269126,"sewage":2.626923,"dayfoot":126.891156,"gm_avg":0.0999,"gm_110":0.10989,"gm_120":0.11988,"acc":{"foot":18653,"crew":38,"days":147,"mifei":319519.2,"mat":313600,"energy":1688506.866,"lube":102900,"repair":49000,"prodwater":79632,"sewage":49000,"gm":4595113.855386,"rev":45996967,"n":0,"ids":[]}},{"wellType":"定向井","block":"埕海（＜4000米）","phase":3,"mifei":0.307246,"mat":12.062154,"energy":94.281406,"lube":3.957894,"repair":1.884712,"sewage":1.884712,"dayfoot":176.861718,"gm_avg":0.33304,"gm_110":0.366344,"gm_120":0.399648,"acc":{"foot":7594,"crew":40,"days":42.9375,"mifei":93328.95,"mat":91600,"energy":715973,"lube":30056.25,"repair":14312.5,"prodwater":0,"sewage":14312.5,"gm":6280277.572056,"rev":18857452.5125,"n":0,"ids":[]}},{"wellType":"定向井","block":"埕海（≥4000米）","phase":3,"mifei":0.362216,"mat":14.220219,"energy":114.653085,"lube":4.666009,"repair":2.221909,"sewage":2.221909,"dayfoot":150.021132,"gm_avg":0.422566,"gm_110":0.464823,"gm_120":0.507079,"acc":{"foot":23072,"crew":40,"days":153.791667,"mifei":334281.566667,"mat":328088.888889,"energy":2645275.9776,"lube":107654.166667,"repair":51263.888889,"prodwater":0,"sewage":51263.888889,"gm":34209204.169743,"rev":80955952.452673,"n":0,"ids":[]}},{"wellType":"定向井","block":"大港页岩油","phase":3,"mifei":0.597749,"mat":22.293676,"energy":145.98,"lube":7.315113,"repair":3.483387,"sewage":3.483387,"dayfoot":95.692308,"acc":{"foot":3732,"crew":38,"days":39,"mifei":84770.4,"mat":83200,"energy":544797.36,"lube":27300,"repair":13000,"prodwater":0,"sewage":13000,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"港东","phase":3,"mifei":0.767576,"mat":28.62756,"energy":43.631825,"lube":9.393418,"repair":4.473056,"sewage":4.473056,"dayfoot":74.520266,"acc":{"foot":8427,"crew":38,"days":113.083333,"mifei":245797.933333,"mat":241244.444445,"energy":367685.393258,"lube":79158.333333,"repair":37694.444444,"prodwater":0,"sewage":37694.444444,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"歧口","phase":3,"mifei":0.698778,"mat":26.061664,"energy":142.902,"lube":8.551483,"repair":4.072135,"sewage":4.072135,"dayfoot":81.857143,"acc":{"foot":10314,"crew":38,"days":126,"mifei":273873.6,"mat":268800,"energy":1473891.228,"lube":88200,"repair":42000,"prodwater":0,"sewage":42000,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"唐东（开发井）","phase":3,"mifei":0.371091,"mat":13.840225,"energy":110.598926,"lube":4.541324,"repair":2.162535,"prodwater":2.703679,"sewage":2.162535,"dayfoot":154.140075,"gm_avg":0.232228,"gm_110":0.255451,"gm_120":0.278674,"acc":{"foot":30995,"crew":38,"days":201.083333,"mifei":437074.733333,"mat":428977.777778,"energy":3428013.7,"lube":140758.333333,"repair":67027.777778,"prodwater":83800.52,"sewage":67027.777778,"gm":19052481.89703,"rev":82042277.9472,"n":0,"ids":[]}},{"wellType":"定向井","block":"唐东（探评井）","phase":3,"mifei":0.457107,"mat":17.048297,"energy":136.39213,"lube":5.593973,"repair":2.663796,"prodwater":3.591337,"sewage":2.663796,"dayfoot":125.134686,"gm_avg":0.076111,"gm_110":0.083722,"gm_120":0.091333,"acc":{"foot":27892,"crew":38,"days":222.895833,"mifei":484486.383333,"mat":475511.111111,"energy":3804249.28427,"lube":156027.083333,"repair":74298.611111,"prodwater":100169.56,"sewage":74298.611111,"gm":5933178.934223,"rev":77953921.846704,"n":0,"ids":[]}},{"wellType":"定向井","block":"新华","phase":3,"mifei":0.513531,"mat":19.152668,"energy":113.671227,"lube":6.284469,"repair":2.992604,"sewage":2.992604,"dayfoot":111.385703,"gm_avg":0.154914,"gm_110":0.170405,"gm_120":0.185897,"acc":{"foot":42074,"crew":38,"days":377.7325,"mifei":821039.362,"mat":805829.333333,"energy":4782603.204,"lube":264412.75,"repair":125910.833333,"prodwater":0,"sewage":125910.833333,"gm":24342335.355461,"rev":157134165.4,"n":0,"ids":[]}},{"wellType":"水平井","block":"埕海","phase":3,"mifei":0.431541,"mat":16.094751,"energy":125.793,"lube":5.28109,"repair":2.514805,"sewage":2.514805,"dayfoot":132.548387,"acc":{"foot":8218,"crew":38,"days":62,"mifei":134763.2,"mat":132266.666667,"energy":1033766.874,"lube":43400,"repair":20666.666667,"prodwater":0,"sewage":20666.666667,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"水平井","block":"大港页岩油","phase":3,"mifei":0.511101,"mat":19.062057,"energy":166.1112,"lube":6.254738,"repair":2.978446,"sewage":2.978446,"dayfoot":111.915167,"gm_avg":0.00749,"gm_110":0.008239,"gm_120":0.008988,"acc":{"foot":43535,"crew":38,"days":389,"mifei":845530.4,"mat":829866.666667,"energy":7231651.092,"lube":272300,"repair":129666.666667,"prodwater":0,"sewage":129666.666667,"gm":1368516.901807,"rev":182709100,"n":0,"ids":[]}},{"wellType":"水平井","block":"唐东","phase":3,"mifei":0.457345,"mat":17.057172,"energy":152.156847,"lube":5.596885,"repair":2.665183,"prodwater":6.269126,"sewage":2.665183,"dayfoot":125.069578,"acc":{"foot":5842,"crew":38,"days":46.71,"mifei":101528.856,"mat":99648,"energy":888900.3,"lube":32697,"repair":15570,"prodwater":36624.231813,"sewage":15570,"gm":0,"rev":0,"n":0,"ids":[]}},{"wellType":"定向井","block":"板桥","phase":4,"mifei":0.603737,"mat":22.517004,"energy":137.047705,"lube":7.388392,"repair":3.518282,"prodwater":5.812837,"sewage":3.518282,"dayfoot":94.743216,"gm_avg":0.300482,"gm_110":0.33053,"gm_120":0.360578,"acc":{"foot":14474,"crew":38,"days":152.770833,"mifei":332062.683333,"mat":325911.111111,"energy":1983628.479775,"lube":106939.583333,"repair":50923.611111,"prodwater":84135,"sewage":50923.611111,"gm":17977484.451855,"rev":59828852,"n":0,"ids":[]}}],"process":[{"name":"搬迁拆卸","unit":"元/井次","rate":7245.33,"note":""},{"name":"平移拆卸","unit":"元/井次","rate":1811.33,"note":""},{"name":"搬迁转场(腾井场）","unit":"元/井次","rate":3622.67,"note":""},{"name":"搬安（50型）","unit":"元/井次","rate":16302,"note":"冬季上浮20%"},{"name":"搬安（70型）","unit":"元/井次","rate":21736,"note":"冬季上浮20%"},{"name":"平移","unit":"元/井次","rate":3622.67,"note":""},{"name":"砌方井","unit":"元/井次","rate":1811.33,"note":""},{"name":"摆基础","unit":"元/井次","rate":1811.33,"note":""},{"name":"配合安装泥浆不落地","unit":"元/井次","rate":1811.33,"note":""},{"name":"顶驱拆装","unit":"元/井次","rate":5434,"note":""},{"name":"机械手拆装","unit":"元/井次","rate":5434,"note":""},{"name":"冬防保温（自保温）","unit":"元/井次","rate":3622.67,"note":""},{"name":"油基泥浆施工","unit":"元/台月","rate":6000,"note":""},{"name":"设备配套","unit":"元/天·人","rate":104.87,"note":"配套15天后按60%标准发放"}],"geomembrane":[{"proc":"搬迁","rig":"50型","rate":11500.5},{"proc":"搬迁","rig":"70型","rate":12546},{"proc":"平移","rig":"通用","rate":4182}],"rigs":[{"team":"50639","rigType":"50LD","kType":1.023258,"kRepair":1.5},{"team":"50537","rigType":"50J","kType":0.687713,"kRepair":1.35},{"team":"50998","rigType":"50J","kType":0.528737,"kRepair":1.35},{"team":"70520","rigType":"70LD","kType":1.372692,"kRepair":1.5},{"team":"70111","rigType":"70D","kType":0.908971,"kRepair":1.05},{"team":"70152","rigType":"70D","kType":0.835918,"kRepair":1.05},{"team":"70316","rigType":"70D","kType":0.896555,"kRepair":0.42},{"team":"70318","rigType":"70DB","kType":1.084256,"kRepair":0.42},{"team":"70315","rigType":"70DB","kType":0.917161,"kRepair":0.28},{"team":"BH70302","rigType":"70DB","kType":1.013156,"kRepair":0.7}]};
+let AI_STATUS=null;     // AI 解析导入的服务端配置（/api/ai/status），单机模式下恒为 null；同样要早于 renderWellActions 的首次调用
 let BACKEND_MODE=false; // 提前声明：saveWells/saveDS 里会引用它，若声明晚于这两个函数首次被同步调用（如启动时自动写入示例井），会因暂时性死区中断整个脚本
 
 /* ============================ 定额库本机缓存 ============================ */
@@ -952,7 +1012,7 @@ function msgAutoHide(box, clear){
 
 /* ============================ 状态 ============================ */
 const S = {
-  prov:{},                                // 字段来源 {src, conf, evidence}
+  prov:{},                                // 字段来源 {src, conf, evidence, file}；file 为 AI 解析导入时的来源文件
   w:{
     wellNo:'', team:'70318', wellType:'水平井', block:'', phase:2,
     footage:0, cycleDays:0, preDays:0, assessedCycleDays:0, crewStd:38, planDays:0, difficulty:1,
@@ -970,7 +1030,7 @@ const S = {
 };
 const SRC_LABEL = { sys:'系统直采', ai:'AI解析', man:'人工录入' };
 function src(k){ return (S.prov[k]&&S.prov[k].src) || 'man'; }
-function setSrc(k,s,conf,ev){ S.prov[k]={src:s,conf:conf,evidence:ev}; }
+function setSrc(k,s,conf,ev,file){ S.prov[k]={src:s,conf:conf,evidence:ev}; if(file) S.prov[k].file=file; }
 
 /* 系统直采字段：来自生产/财务/人资系统，不经人工填报 */
 ['team','wellType','block','phase','footage','crewStd','planDays','elecKwh','dieselTon','oilTon','cycleDays']
@@ -1196,9 +1256,10 @@ function field(f){
   const k=f.k, v=S.w[k], s=src(k);
   const d=el('div','fld'); d.dataset.src=s;
   const p=S.prov[k];
-  const tip = p&&p.evidence ? ` title="依据：${p.evidence.replace(/"/g,'&quot;')}"` : '';
+  const tip = p&&(p.evidence||p.file) ? ` title="${esc((p.file?'来源文件：'+p.file+'\n':'')+(p.evidence?'依据：'+p.evidence:''))}"` : '';
   const conf = p&&p.conf!=null ? ` ${Math.round(p.conf*100)}%` : '';
   d.innerHTML = `<label>${f.l}<span class="pill ${s}"${tip}>${SRC_LABEL[s]}${conf}</span></label>`;
+
   let inp;
   if(f.t==='chk'){
     inp=el('div','chk'); inp.innerHTML=`<input type="checkbox" id="f_${k}" ${v?'checked':''}><span>${v?'是':'否'}</span>`;
@@ -1232,6 +1293,9 @@ function field(f){
     inp.addEventListener('change',()=>render());
   }
   d.appendChild(inp);
+  // AI 解析导入的字段：来源文件与原文依据直接显示在输入框下方，不用悬停也看得到
+  if(p&&p.file){ const ev=el('div','provev'); ev.title=p.evidence||'';
+    ev.innerHTML='<b>'+esc(p.file)+'</b>'+(p.evidence?' · '+esc(p.evidence):''); d.appendChild(ev); }
   return d;
 }
 
@@ -1722,8 +1786,10 @@ function renderWellActions(){
     (EDIT_ID?'<button class="btn ghost" id="cancelEdit" type="button">取消编辑</button>':'')+
     (PEND_RESET
       ? '<button class="btn" id="resetWell" type="button" style="background:var(--neg);border-color:var(--neg);color:#fff">确认恢复</button>'
-      : '<button class="btn ghost" id="resetWell" type="button">恢复默认值</button>');
+      : '<button class="btn ghost" id="resetWell" type="button">恢复默认值</button>')+
+    (AI_STATUS?'<button class="btn ghost" id="aiImport" type="button" title="上传 Word / PDF / Excel 单井资料，解析后逐项核对回填">AI 导入资料</button>':'');
   $('#submitWell').onclick=submitWell;
+  if($('#aiImport')) $('#aiImport').onclick=openAiImport;
   $('#resetWell').onclick=resetWellForm;
   const ce=$('#cancelEdit');
   if(ce) ce.onclick=()=>{ EDIT_ID=null; wellMsg('已退出编辑，表单保留当前参数。',''); renderWellActions(); renderWellStore(); };
@@ -4372,6 +4438,7 @@ function go(id){
   if(id==='team') renderTeam();
   if(id==='tinfo') renderTinfo();
   if(id==='bak') renderBak();
+  if(id==='airules') renderAiRules();
   if(id==='well') requestAnimationFrame(syncPhH);
   window.scrollTo({top:0,behavior:'instant'});
 }
@@ -4616,6 +4683,418 @@ renderRollRules();
     if(n) PF.wellNo=n, preFillFromHistory();
     go('pre'); };
 })();
+/* ============================ AI 解析导入 ============================
+   单井资料（Word / PDF / Excel）→ 服务器抽文本 → 大模型或本地词典解析 → 逐项核对 → 回填录入表。
+   只回填用户勾选的字段：与表单已录入值不同的、置信度低于 50% 的默认不勾，避免把核实过的数据悄悄冲掉。
+   回填字段写入 S.prov：src=ai、置信度、原文依据、来源文件；核对时改过值的记为人工录入并留下 AI 原值。 */
+async function loadAiStatus(){
+  AI_STATUS=null;
+  if(BACKEND_MODE){ try{ const r=await apiFetch('/api/ai/status'); if(r.ok) AI_STATUS=await r.json(); }catch(e){} }
+  const nav=$('#navAiRules'); if(nav) nav.hidden=!(AI_STATUS&&AI_STATUS.admin);
+  renderWellActions();
+}
+function aiFieldMap(){ const m={}; F.forEach(g=>g.rows.forEach(r=>r.forEach(f=>{ m[f.k]=f; }))); return m; }
+const aiN=v=>Number(v).toLocaleString('zh-CN',{maximumFractionDigits:4});
+function aiShow(f,v){
+  if(f.t==='chk') return v?'是':'否';
+  if(v===''||v==null) return '—';
+  return f.t==='num' ? aiN(v) : String(v);
+}
+function aiSame(f,a,b){ return f.t==='num' ? (+a||0)===(+b||0) : f.t==='chk' ? !!a===!!b : String(a==null?'':a)===String(b==null?'':b); }
+// 表单这一项还没真正录入过：等于出厂默认值，或为空/0
+function aiBlank(f,k){ const v=S.w[k]; return aiSame(f,v,W_DEFAULT[k]) || v===''||v==null || (f.t==='num'&&!(+v)); }
+function aiConfPill(c){ const p=Math.round((+c||0)*100); return '<span class="pill '+(c>=0.8?'hi':c>=0.5?'mid':'lo')+'">'+p+'%</span>'; }
+async function aiErr(r){ if(r.status===401) return '登录已过期，请刷新页面重新登录'; try{ const j=await r.json(); return j.error||('HTTP '+r.status); }catch(e){ return 'HTTP '+r.status; } }
+
+let AIM=null;   // 导入对话框状态：{docs, mode, result, rows, step}
+function openAiImport(){
+  if(!AI_STATUS) return;
+  AIM={docs:[], mode:AI_STATUS.ai?'ai':'local', result:null, rows:[], step:1, busy:false};
+  const mask=el('div','aimask'); mask.id='aiMask';
+  mask.innerHTML='<div class="aibox" role="dialog" aria-modal="true" aria-label="AI 解析导入单井资料"><header><div><h3>AI 解析导入单井资料</h3>'+
+    '<div class="sub" id="aimSub"></div></div><button class="btn ghost mini" id="aimX" type="button">关闭</button></header>'+
+    '<div class="body" id="aimBody"></div><footer id="aimFoot"></footer></div>';
+  document.body.appendChild(mask);
+  $('#aimX').onclick=closeAiImport;
+  aimStep1();
+}
+function closeAiImport(){ const m=$('#aiMask'); if(m) m.remove(); AIM=null; }
+
+function aimStep1(){
+  AIM.step=1;
+  const st=AI_STATUS, acc=st.accept.join(',');
+  $('#aimSub').textContent='第 1 步 / 共 2 步：选择资料';
+  const modes=st.ai ? [['ai','AI 解析 · '+st.vendor+' '+st.model],['local','本地词典（不出网）']] : [['local','本地词典（不出网）']];
+  $('#aimBody').innerHTML=
+    '<div class="aidrop" id="aimDrop" tabindex="0"><b>点击选择或拖入单井资料</b><div class="sub" style="margin-top:4px">'+
+    'Word（.docx / .doc）、PDF、Excel（.xlsx / .xls / .csv），单个不超过 '+st.maxFileMB+'MB，最多 '+st.maxDocs+' 份。设计书、完井报告、成本表可以一起放进来</div></div>'+
+    '<input type="file" id="aimFile" multiple hidden accept="'+acc+'">'+
+    '<ul class="aifiles" id="aimList"></ul>'+
+    '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px"><span class="sub">解析方式</span><div class="seg" id="aimMode"></div></div>'+
+    '<div id="aimNote" style="margin-top:12px"></div><div id="aimMsg" style="margin-top:10px"></div>';
+  const seg=$('#aimMode');
+  modes.forEach(([v,l])=>{ const b=el('button',null,esc(l)); b.type='button'; b.setAttribute('aria-pressed',AIM.mode===v);
+    b.onclick=()=>{ AIM.mode=v; [...seg.children].forEach(x=>x.setAttribute('aria-pressed',x===b)); aimNote(); }; seg.appendChild(b); });
+  const drop=$('#aimDrop'), fi=$('#aimFile');
+  drop.onclick=()=>fi.click();
+  drop.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fi.click(); } };
+  drop.ondragover=e=>{ e.preventDefault(); drop.classList.add('on'); };
+  drop.ondragleave=()=>drop.classList.remove('on');
+  drop.ondrop=e=>{ e.preventDefault(); drop.classList.remove('on'); aimAdd([...e.dataTransfer.files]); };
+  fi.onchange=()=>{ aimAdd([...fi.files]); fi.value=''; };
+  $('#aimFoot').innerHTML='<span class="grow"></span><button class="btn ghost" id="aimCancel" type="button">取消</button>'+
+    '<button class="btn" id="aimGo" type="button">开始解析</button>';
+  $('#aimCancel').onclick=closeAiImport;
+  $('#aimGo').onclick=aimParse;
+  aimList(); aimNote();
+}
+function aimNote(){
+  const st=AI_STATUS, n=$('#aimNote'); if(!n) return;
+  n.innerHTML = AIM.mode==='ai'
+    ? (st.egress ? '<div class="note"><b>数据出网提示：</b>解析时，从上述文件中提取出的文字会发送到 <b>'+esc(st.vendor)+'</b> 的服务器，由大模型 '+esc(st.model)+' 解析。涉密或敏感资料请改用「本地词典」。</div>'
+                 : '<div class="note ok">大模型部署在内网（'+esc(st.vendor)+'），资料不出公司网络。</div>')
+    : '<div class="note">本地词典解析在本服务器上完成，资料不外发；只认表格和「名称：数值」写法，不理解上下文，'+(st.ai?'识别率低于 AI 解析。':'系统未配置大模型，目前只能用这种方式。')+'</div>';
+}
+function aimList(){
+  const ul=$('#aimList'); if(!ul) return;
+  ul.innerHTML=AIM.docs.map((d,i)=>'<li><span class="nm"><b>'+esc(d.name)+'</b> <span class="sub">'+(d.size/1024).toFixed(0)+' KB'+
+    (d.status==='ok'?' · '+d.kind.toUpperCase()+' · '+d.chars+' 字':'')+'</span>'+
+    (d.status==='loading'?'<span class="w" style="color:var(--muted)">正在提取文字…</span>':'')+
+    (d.error?'<span class="w" style="color:var(--neg)">'+esc(d.error)+'</span>':'')+
+    (d.warnings||[]).map(w=>'<span class="w">'+esc(w)+'</span>').join('')+
+    '</span><button class="btn ghost mini" data-rm="'+i+'" type="button">移除</button></li>').join('');
+  ul.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ AIM.docs.splice(+b.dataset.rm,1); aimList(); });
+  const go=$('#aimGo'); if(go){ const ready=AIM.docs.filter(d=>d.status==='ok'&&d.chars>0);
+    go.disabled=AIM.busy||!ready.length||AIM.docs.some(d=>d.status==='loading');
+    go.textContent=ready.length?'开始解析（'+ready.length+' 份）':'开始解析'; }
+}
+async function aimAdd(files){
+  const st=AI_STATUS;
+  for(const f of files){
+    if(AIM.docs.length>=st.maxDocs){ aimMsg('最多 '+st.maxDocs+' 份资料，多出的已忽略','err'); break; }
+    const ext=(f.name.match(/\.[^.]+$/)||[''])[0].toLowerCase();
+    const d={name:f.name, size:f.size, status:'loading', warnings:[]};
+    AIM.docs.push(d);
+    if(!st.accept.includes(ext)){ d.status='err'; d.error='不支持的文件类型，请上传 '+st.accept.join(' / '); continue; }
+    if(f.size>st.maxFileMB*1024*1024){ d.status='err'; d.error='文件超过 '+st.maxFileMB+'MB'; continue; }
+    aimList();
+    try{
+      const r=await fetch('/api/ai/extract?name='+encodeURIComponent(f.name),{method:'POST',credentials:'include',headers:{'content-type':'application/octet-stream'},body:f});
+      if(!r.ok){ d.status='err'; d.error=await aiErr(r); }
+      else Object.assign(d,await r.json(),{status:'ok'});
+    }catch(e){ d.status='err'; d.error='网络中断，上传失败'; }
+    if(!AIM) return;
+    aimList();
+  }
+  aimList();
+}
+function aimMsg(html,cls){ const m=$('#aimMsg'); if(m) m.innerHTML=html?'<div class="note '+(cls||'')+'">'+html+'</div>':''; }
+async function aimParse(){
+  const docs=AIM.docs.filter(d=>d.status==='ok'&&d.chars>0).map(d=>({name:d.name,text:d.text}));
+  if(!docs.length) return;
+  AIM.busy=true; aimList();
+  const go=$('#aimGo'); go.textContent=AIM.mode==='ai'?'大模型解析中，约需 10–60 秒…':'解析中…';
+  aimMsg('');
+  try{
+    const r=await apiFetch('/api/ai/parse',{method:'POST',body:JSON.stringify({mode:AIM.mode,docs})});
+    if(!AIM) return;
+    if(!r.ok){ aimMsg('<b>解析失败：</b>'+esc(await aiErr(r))+(AIM.mode==='ai'?'。可改用「本地词典」再试。':''),'err'); return; }
+    AIM.result=await r.json();
+    aimStep2();
+  }catch(e){ if(AIM) aimMsg('<b>解析失败：</b>网络中断或服务器无响应','err'); }
+  finally{ if(AIM){ AIM.busy=false; if(AIM.step===1) aimList(); } }
+}
+
+function aimStep2(){
+  AIM.step=2;
+  const R=AIM.result, FM=aiFieldMap();
+  AIM.rows=Object.keys(FM).filter(k=>R.fields[k]).map(k=>{
+    const f=FM[k], x=R.fields[k], blank=aiBlank(f,k), same=aiSame(f,S.w[k],x.value);
+    return {k, f, orig:x.value, val:x.value, conf:x.conf, evidence:x.evidence, file:x.file, flags:x.flags||[],
+      same, conflict:!blank&&!same, on: x.conf>=0.5 && (blank||same)};
+  });
+  const n=AIM.rows.length;
+  $('#aimSub').textContent='第 2 步 / 共 2 步：逐项核对，勾选要回填的字段';
+  $('#aimBody').innerHTML=
+    '<div class="note '+(n?'ok':'err')+'">'+(n?'从 '+AIM.docs.filter(d=>d.status==='ok'&&d.chars>0).length+' 份资料解析出 <b>'+n+'</b> 个字段':'<b>没有解析出任何字段。</b>可以换一份资料，或请管理员在「解析规则」里补充字段叫法')+
+      '<span class="sub">（'+esc(R.model)+' · '+(R.ms/1000).toFixed(1)+' 秒）</span>。'+
+      (n?'可以直接改「解析值」；<b>与表单已录入值不同的（黄底）和置信度低于 50% 的默认不勾选</b>，确认无误再勾上。':'')+'</div>'+
+    ((R.notes||[]).length?'<div class="note" style="margin-top:8px"><b>解析说明：</b>'+R.notes.map(esc).join('；')+'</div>':'')+
+    (n?'<div class="scroll" style="margin-top:12px"><table class="aitbl"><thead><tr><th class="c"><input type="checkbox" id="aimAll" aria-label="全选"></th>'+
+      '<th class="l">字段</th><th class="l">表单当前值</th><th class="l">解析值</th><th class="c">置信度</th><th class="l">来源文件 · 原文依据</th></tr></thead><tbody id="aimRows"></tbody></table></div>':'');
+  $('#aimFoot').innerHTML=
+    '<label class="sub" id="aimExWrap" style="display:none;align-items:center;gap:6px"><input type="checkbox" id="aimEx" checked style="width:15px;height:15px;margin:0">'+
+      '把改过的值存为纠正示例'+(AI_STATUS.admin?'（后续解析参考）':'（管理员审核后用于后续解析）')+'</label>'+
+    '<span class="grow"></span><button class="btn ghost" id="aimBack" type="button">← 重新选择资料</button>'+
+    '<button class="btn ghost" id="aimCancel" type="button">取消</button><button class="btn" id="aimApply" type="button">回填</button>';
+  $('#aimBack').onclick=aimStep1;
+  $('#aimCancel').onclick=closeAiImport;
+  $('#aimApply').onclick=aimApply;
+  if(n){ $('#aimAll').onchange=e=>{ AIM.rows.forEach(r=>r.on=e.target.checked); aimRows(); }; aimRows(); }
+  aimFootState();
+}
+function aimEditor(r,i){
+  const f=r.f, v=r.val;
+  if(f.t==='chk') return '<select data-v="'+i+'"><option value="1"'+(v?' selected':'')+'>是</option><option value="0"'+(v?'':' selected')+'>否</option></select>';
+  if(f.t==='select'){
+    const opts=(f.optFn?f.optFn():f.opt)||[], all=opts.some(o=>String(o)===String(v))?opts:[v,...opts];
+    return '<select data-v="'+i+'">'+all.map(o=>'<option value="'+esc(o)+'"'+(String(o)===String(v)?' selected':'')+'>'+esc(o)+(opts.some(x=>String(x)===String(o))?'':'（不在候选中）')+'</option>').join('')+'</select>';
+  }
+  return '<input data-v="'+i+'" type="'+(f.t==='num'?'number':'text')+'"'+(f.t==='num'?' step="any"':'')+' value="'+esc(v)+'">';
+}
+function aimRows(){
+  const tb=$('#aimRows'); if(!tb) return;
+  tb.innerHTML=AIM.rows.map((r,i)=>{
+    const edited=!aiSame(r.f,r.val,r.orig);
+    const tags=[r.same?'与表单一致':'', r.conflict?'将覆盖表单已录入的「'+aiShow(r.f,S.w[r.k])+'」':'', edited?'已改，原解析值「'+aiShow(r.f,r.orig)+'」':''].concat(r.flags).filter(Boolean);
+    return '<tr class="'+(r.conflict?'conflict ':'')+(r.on?'':'skip')+'"><td class="c"><input type="checkbox" data-on="'+i+'"'+(r.on?' checked':'')+' aria-label="回填'+esc(r.f.l)+'"></td>'+
+      '<td class="l">'+esc(r.f.l)+'</td><td class="l">'+esc(aiShow(r.f,S.w[r.k]))+'</td>'+
+      '<td class="l val">'+aimEditor(r,i)+'</td><td class="c">'+aiConfPill(r.conf)+'</td>'+
+      '<td class="ev"><b>'+esc(r.file||'—')+'</b>'+(r.evidence?' · '+esc(r.evidence):'')+tags.map(t=>'<span class="flag">'+esc(t)+'</span>').join('')+'</td></tr>';
+  }).join('');
+  tb.querySelectorAll('[data-on]').forEach(c=>c.onchange=()=>{ AIM.rows[+c.dataset.on].on=c.checked; aimRows(); });
+  tb.querySelectorAll('[data-v]').forEach(c=>c.onchange=()=>{
+    const r=AIM.rows[+c.dataset.v];
+    r.val = r.f.t==='num' ? (parseFloat(c.value)||0) : r.f.t==='chk' ? c.value==='1' : (r.k==='phase'?+c.value:c.value);
+    r.on=true; aimRows(); });
+  const all=$('#aimAll'); if(all){ const k=AIM.rows.filter(r=>r.on).length; all.checked=k===AIM.rows.length; all.indeterminate=k>0&&k<AIM.rows.length; }
+  aimFootState();
+}
+function aimFootState(){
+  const k=AIM.rows.filter(r=>r.on).length, ed=AIM.rows.some(r=>r.on&&!aiSame(r.f,r.val,r.orig));
+  const b=$('#aimApply'); if(b){ b.disabled=!k; b.textContent='回填勾选的 '+k+' 项'; }
+  const w=$('#aimExWrap'); if(w) w.style.display=ed?'inline-flex':'none';
+}
+async function aimApply(){
+  const pick=AIM.rows.filter(r=>r.on); if(!pick.length) return;
+  const edited=pick.filter(r=>!aiSame(r.f,r.val,r.orig));
+  pick.forEach(r=>{
+    S.w[r.k]=r.val;
+    if(aiSame(r.f,r.val,r.orig)) setSrc(r.k,'ai',r.conf,r.evidence,r.file);
+    else setSrc(r.k,'man',null,'AI 解析为「'+aiShow(r.f,r.orig)+'」，核对时改为「'+aiShow(r.f,r.val)+'」'+(r.evidence?'；依据：'+r.evidence:''),r.file);
+  });
+  const saveEx=edited.length && $('#aimEx') && $('#aimEx').checked;
+  const nDocs=AIM.docs.filter(d=>d.status==='ok'&&d.chars>0).length;
+  closeAiImport();
+  render();
+  let tail='';
+  if(saveEx){
+    try{
+      const r=await apiFetch('/api/ai/examples',{method:'POST',body:JSON.stringify({wellNo:S.w.wellNo,
+        items:edited.map(x=>({k:x.k,value:x.val,wrong:aiShow(x.f,x.orig),evidence:x.evidence}))})});
+      tail = r.ok ? (AI_STATUS.admin?'改过的 '+edited.length+' 项已存为纠正示例，后续解析会参考。':'改过的 '+edited.length+' 项已提交为纠正示例，管理员审核后生效。')
+                  : '纠正示例保存失败：'+esc(await aiErr(r));
+    }catch(e){ tail='纠正示例保存失败：网络中断'; }
+  }
+  wellMsg('已从 '+nDocs+' 份资料回填 <b>'+pick.length+'</b> 项'+(edited.length?'（其中 '+edited.length+' 项核对时改过值，记为人工录入）':'')+
+    '。绿色「AI解析」标签旁是置信度，输入框下方是来源文件与原文依据。尚未入库，确认后点「提交入库」。'+(tail?'<br>'+tail:''),'ok');
+}
+
+/* ============================ 解析规则（AI 解析导入的调教台，仅管理员） ============================
+   规则存服务器数据目录 ai-rules.json，整份读、整份存；保存后下一次解析立即生效。
+   这里只做编辑，取值口径的说明见《AI解析导入与规则调教.md》。 */
+let AIR=null, AIR_TAB='fields', AIR_DIRTY=false;
+const AIR_TABS=[['fields','字段词典'],['terms','术语专名'],['rules','理解规则'],['examples','纠正示例'],['try','试解析']];
+const AIR_KINDS=['区块','井型','队号','井号','缩写','其他'];
+const AIR_TYPE={num:'数值',text:'文本',bool:'是/否',enum:'枚举'};
+function airMsg(html,cls){ const m=$('#airMsg'); if(!m) return;
+  m.innerHTML=html?'<div class="note '+(cls||'')+'" style="margin-bottom:12px">'+html+'</div>':'';
+  msgAutoHide(m,()=>airMsg('')); }
+function airDirty(v){ AIR_DIRTY=v; const b=$('#airSave'); if(b){ b.disabled=!v; b.textContent=v?'保存规则 •':'保存规则'; } airMeta(); }
+function airMeta(){ const m=$('#airMeta'); if(!m||!AIR) return;
+  m.textContent=AIR_DIRTY?'有未保存的修改':(AIR.updatedAt?'上次保存：'+stamp(Date.parse(AIR.updatedAt))+(AIR.updatedBy?' · '+AIR.updatedBy:''):'出厂规则，尚未调整'); }
+// 「万元×10000，小时×1/24」⇄ conv 数组
+function convText(c){ return (c||[]).map(x=>{ const inv=1/x.factor; return x.unit+'×'+(x.factor<1&&Math.abs(inv-Math.round(inv))<1e-6?'1/'+Math.round(inv):+x.factor.toFixed(6)); }).join('，'); }
+function convParse(t){
+  const ok=[], bad=[];
+  String(t||'').split(/[，,;；\n]/).map(x=>x.trim()).filter(Boolean).forEach(x=>{
+    const m=/^(.+?)\s*[×xX*]\s*([\d.]+)(?:\s*\/\s*([\d.]+))?$/.exec(x);
+    const v=m?(+m[2])/(m[3]?+m[3]:1):NaN;
+    if(m&&isFinite(v)&&v>0) ok.push({unit:m[1].trim(),factor:v}); else bad.push(x);
+  });
+  return {ok,bad};
+}
+async function renderAiRules(){
+  const seg=$('#airSeg');
+  if(!seg.children.length){
+    AIR_TABS.forEach(([v,l])=>{ const b=el('button',null,l); b.type='button'; b.dataset.tab=v;
+      b.onclick=()=>{ AIR_TAB=v; airTabs(); airBody(); }; seg.appendChild(b); });
+    $('#airSave').onclick=airSave;
+    $('#airReset').onclick=airReset;
+    $('#airExport').onclick=()=>{ if(!AIR) return;
+      const blob=new Blob([JSON.stringify(AIR,null,2)],{type:'application/json'}), url=URL.createObjectURL(blob), a=document.createElement('a');
+      a.href=url; a.download='AI解析规则_'+ymd()+'.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); };
+    $('#airImport').onclick=()=>$('#airFile').click();
+    $('#airFile').onchange=async e=>{ const f=e.target.files[0]; e.target.value=''; if(!f) return;
+      try{ const j=JSON.parse(await f.text()); if(!j||!Array.isArray(j.fields)) throw new Error('不是解析规则导出文件');
+        AIR=Object.assign({terms:[],rules:[],examples:[]},j); airDirty(true); airBody();
+        airMsg('已载入「'+esc(f.name)+'」，核对无误后点「保存规则」才会生效。'); }
+      catch(err){ airMsg('<b>导入失败：</b>'+esc(err.message),'err'); } };
+  }
+  airTabs();
+  if(!AIR){
+    $('#airBody').innerHTML='<p class="sub">正在读取规则…</p>';
+    try{ const r=await apiFetch('/api/ai/rules'); if(!r.ok) throw new Error(await aiErr(r)); AIR=await r.json(); airDirty(false); }
+    catch(e){ $('#airBody').innerHTML='<div class="note err"><b>读取失败：</b>'+esc(e.message)+'</div>'; return; }
+  }
+  airBody();
+}
+function airTabs(){ [...$('#airSeg').children].forEach(b=>{
+  const pend=b.dataset.tab==='examples'&&AIR?AIR.examples.filter(e=>e.status==='pending').length:0;
+  b.textContent=AIR_TABS.find(t=>t[0]===b.dataset.tab)[1]+(pend?'（'+pend+' 待审）':'');
+  b.setAttribute('aria-pressed',b.dataset.tab===AIR_TAB); }); }
+function airBody(){
+  const host=$('#airBody'); if(!AIR) return;
+  ({fields:airFields,terms:airTerms,rules:airRules,examples:airExamples,try:airTry})[AIR_TAB](host);
+}
+// 通用：表格里 data-i / data-p 的输入框直接写回 AIR[list][i][p]
+function airBind(host,list,after){
+  host.querySelectorAll('[data-p]').forEach(inp=>{
+    const ev=(inp.type==='checkbox'||inp.tagName==='SELECT')?'change':'input';
+    inp.addEventListener(ev,()=>{ const o=AIR[list][+inp.dataset.i], p=inp.dataset.p;
+      o[p]= inp.type==='checkbox' ? inp.checked : inp.value; airDirty(true); if(after) after(inp,o,p); });
+  });
+  host.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ AIR[list].splice(+b.dataset.del,1); airDirty(true); airTabs(); airBody(); });
+}
+function airFields(host){
+  host.innerHTML='<p class="sub" style="margin:0 0 10px">每个字段的其它叫法（别名）越全，识别越准；靠前的叫法优先。单位换算写成「资料单位×系数」，如「万元×10000，小时×1/24」，'+
+    '系数是把资料单位换成目标单位要乘的数。「取值」区分设计值和实际值。字段与录入表一一对应，不能增删，不需要解析的字段关掉「启用」即可。</p>'+
+    '<div class="scroll"><table class="airtbl"><thead><tr><th>启用</th><th>字段</th><th>类型 / 目标单位</th><th>别名（顿号分隔）</th><th>单位换算</th><th>取值</th><th>取值说明（交给大模型）</th></tr></thead><tbody>'+
+    AIR.fields.map((f,i)=>'<tr><td><input type="checkbox" data-i="'+i+'" data-p="enabled"'+(f.enabled?' checked':'')+' style="width:16px;height:16px;min-width:0;margin:0"></td>'+
+      '<td style="min-width:120px"><input data-i="'+i+'" data-p="label" value="'+esc(f.label)+'"><div class="sub">'+esc(f.k)+'</div></td>'+
+      '<td style="min-width:96px">'+AIR_TYPE[f.type]+(f.type==='num'?'<input data-i="'+i+'" data-p="unit" value="'+esc(f.unit)+'" placeholder="单位" style="margin-top:4px">':'')+'</td>'+
+      '<td style="min-width:220px"><textarea data-i="'+i+'" data-p="aliasesTxt">'+esc(f.aliases.join('、'))+'</textarea></td>'+
+      '<td style="min-width:170px">'+(f.type==='num'?'<input data-i="'+i+'" data-p="convTxt" value="'+esc(convText(f.conv))+'" placeholder="如 万元×10000">':'<span class="dim">—</span>')+'</td>'+
+      '<td><select data-i="'+i+'" data-p="pick"><option value="">不区分</option><option value="actual"'+(f.pick==='actual'?' selected':'')+'>实际值</option><option value="design"'+(f.pick==='design'?' selected':'')+'>设计值</option></select></td>'+
+      '<td style="min-width:260px"><textarea data-i="'+i+'" data-p="note">'+esc(f.note)+'</textarea></td></tr>').join('')+
+    '</tbody></table></div>';
+  airBind(host,'fields',(inp,o,p)=>{
+    if(p==='aliasesTxt'){ o.aliases=inp.value.split(/[、,，;；\n]/).map(x=>x.trim()).filter(Boolean); delete o.aliasesTxt; }
+    if(p==='convTxt'){ const r=convParse(inp.value); o.conv=r.ok; delete o.convTxt;
+      inp.classList.toggle('bad',r.bad.length>0); inp.title=r.bad.length?'写法不对，已忽略：'+r.bad.join('，'):''; }
+  });
+}
+function airTerms(host){
+  host.innerHTML='<p class="sub" style="margin:0 0 10px">区块名、井型叫法、队号格式、井号命名规律、大港油区常见缩写。原样交给大模型作背景知识（本地词典解析不使用）。标「示例」的预置条目请按实际核实。</p>'+
+    '<div class="scroll"><table class="airtbl"><thead><tr><th>类别</th><th>术语 / 写法</th><th>含义 / 对应关系</th><th></th></tr></thead><tbody>'+
+    AIR.terms.map((t,i)=>'<tr><td style="width:96px"><select data-i="'+i+'" data-p="kind">'+AIR_KINDS.map(k=>'<option'+(k===t.kind?' selected':'')+'>'+k+'</option>').join('')+'</select></td>'+
+      '<td style="min-width:150px"><input data-i="'+i+'" data-p="term" value="'+esc(t.term)+'"></td>'+
+      '<td style="min-width:360px"><input data-i="'+i+'" data-p="meaning" value="'+esc(t.meaning)+'"></td>'+
+      '<td style="width:60px"><button class="btn ghost mini" data-del="'+i+'" type="button">删除</button></td></tr>').join('')+
+    '</tbody></table></div><button class="btn ghost mini" id="airAddTerm" type="button" style="margin-top:10px">＋ 新增术语</button>';
+  airBind(host,'terms');
+  $('#airAddTerm').onclick=()=>{ AIR.terms.push({kind:'其他',term:'',meaning:''}); airDirty(true); airBody(); };
+}
+function airRules(host){
+  host.innerHTML='<p class="sub" style="margin:0 0 10px">用大白话写清楚口径，比如两个容易混的概念怎么区分、设计值和实际值怎么取、多个候选值取哪个。一条只讲一件事，原样交给大模型。</p>'+
+    '<div class="scroll"><table class="airtbl"><thead><tr><th>启用</th><th>#</th><th>规则</th><th></th></tr></thead><tbody>'+
+    AIR.rules.map((r,i)=>'<tr><td style="width:44px"><input type="checkbox" data-i="'+i+'" data-p="enabled"'+(r.enabled?' checked':'')+' style="width:16px;height:16px;min-width:0;margin:0"></td>'+
+      '<td style="width:28px" class="dim">'+(i+1)+'</td><td style="min-width:520px"><textarea data-i="'+i+'" data-p="text" style="min-height:62px">'+esc(r.text)+'</textarea></td>'+
+      '<td style="width:60px"><button class="btn ghost mini" data-del="'+i+'" type="button">删除</button></td></tr>').join('')+
+    '</tbody></table></div><button class="btn ghost mini" id="airAddRule" type="button" style="margin-top:10px">＋ 新增规则</button>';
+  airBind(host,'rules');
+  $('#airAddRule').onclick=()=>{ AIR.rules.push({text:'',enabled:true}); airDirty(true); airBody(); };
+}
+function airExamples(host){
+  const L=Object.fromEntries(AIR.fields.map(f=>[f.k,f.label]));
+  const ST=[['on','生效'],['pending','待审核'],['off','停用']];
+  host.innerHTML='<p class="sub" style="margin:0 0 10px">在「AI 导入资料」核对时改过的值会沉淀到这里：管理员提交的直接生效，其他账号提交的「待审核」，审核改为「生效」后才会带进提示词。'+
+    '解析时只带最近 12 条生效示例（可在 server/.env 用 AI_MAX_EXAMPLES 调整），过时或有争议的改为「停用」。</p>'+
+    (AIR.examples.length?'<div class="scroll"><table class="airtbl"><thead><tr><th>状态</th><th>井号</th><th>纠正内容</th><th>说明</th><th>提交</th><th></th></tr></thead><tbody>'+
+    AIR.examples.map((e,i)=>({e,i})).reverse().map(({e,i})=>'<tr><td style="width:92px"><select data-i="'+i+'" data-p="status">'+ST.map(([v,l])=>'<option value="'+v+'"'+(e.status===v?' selected':'')+'>'+l+'</option>').join('')+'</select></td>'+
+      '<td>'+esc(e.wellNo||'—')+'</td><td style="min-width:340px">'+e.items.map(it=>'<div><b>'+esc(L[it.k]||it.k)+'</b>：'+(it.wrong!==''?'AI「'+esc(it.wrong)+'」→ ':'')+'正确「'+esc(it.value)+'」'+
+        (it.evidence?'<div class="sub">依据：'+esc(it.evidence)+'</div>':'')+'</div>').join('')+'</td>'+
+      '<td style="min-width:180px"><input data-i="'+i+'" data-p="note" value="'+esc(e.note)+'" placeholder="为什么这样取"></td>'+
+      '<td class="sub" style="white-space:nowrap">'+esc(e.by||'—')+'<br>'+stamp(e.at)+'</td>'+
+      '<td style="width:60px"><button class="btn ghost mini" data-del="'+i+'" type="button">删除</button></td></tr>').join('')+'</tbody></table></div>'
+    :'<p class="sub">还没有示例。</p>')+
+    '<fieldset style="margin-top:16px"><legend>手工新增示例</legend><div class="f3">'+
+      '<div class="fld"><label>井号</label><input id="exWell"></div>'+
+      '<div class="fld"><label>字段</label><select id="exK">'+AIR.fields.map(f=>'<option value="'+f.k+'">'+esc(f.label)+'</option>').join('')+'</select></div>'+
+      '<div class="fld"><label>正确值（换算到目标单位）</label><input id="exV"></div></div><div class="f2">'+
+      '<div class="fld"><label>原文依据（资料里的原话）</label><input id="exEv"></div>'+
+      '<div class="fld"><label>AI 误解析的值（可空）</label><input id="exW"></div></div>'+
+      '<div class="fld"><label>说明（可空）</label><input id="exNote"></div>'+
+      '<button class="btn ghost" id="exAdd" type="button">添加示例</button></fieldset>';
+  airBind(host,'examples',()=>airTabs());
+  $('#exAdd').onclick=()=>{
+    const k=$('#exK').value, f=AIR.fields.find(x=>x.k===k), raw=$('#exV').value.trim();
+    if(!raw){ airMsg('<b>请填写正确值</b>','err'); return; }
+    const value=f.type==='num'?(parseFloat(raw)||0):f.type==='bool'?/^(是|true|1|有)$/.test(raw):(k==='phase'?+raw:raw);
+    AIR.examples.push({id:'',at:Date.now(),by:($('#railWho')&&$('#railWho').textContent)||'',status:'on',wellNo:$('#exWell').value.trim(),note:$('#exNote').value.trim(),
+      items:[{k,value,wrong:$('#exW').value.trim(),evidence:$('#exEv').value.trim()}]});
+    airDirty(true); airBody(); airMsg('已添加，点「保存规则」后生效。');
+  };
+}
+let AIR_TRY={text:'',mode:'',docs:[]};
+function airTry(host){
+  const st=AI_STATUS||{};
+  if(!AIR_TRY.mode) AIR_TRY.mode=st.ai?'ai':'local';
+  host.innerHTML='<p class="sub" style="margin:0 0 10px">粘贴一段资料原文或选几份文件，看看按<b>已保存</b>的规则能解析出什么，用来检验调教效果。'+
+    (AIR_DIRTY?'<b style="color:var(--signal)">当前有未保存的修改，试解析用的仍是上次保存的规则。</b>':'')+'不会改动单井录入表。</p>'+
+    '<textarea id="tryText" placeholder="把资料里的一段文字或表格粘贴到这里（表格可直接从 Word / Excel 复制）">'+esc(AIR_TRY.text)+'</textarea>'+
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">'+
+      '<button class="btn ghost" id="tryFileBtn" type="button">选择文件…</button><input type="file" id="tryFile" multiple hidden accept="'+(st.accept||[]).join(',')+'">'+
+      '<span class="sub" id="tryFiles">'+AIR_TRY.docs.map(d=>esc(d.name)+'（'+d.chars+' 字）').join('、')+'</span><span style="flex:1"></span>'+
+      '<select id="tryMode" style="width:auto">'+(st.ai?'<option value="ai"'+(AIR_TRY.mode==='ai'?' selected':'')+'>AI 解析 · '+esc(st.vendor)+'</option>':'')+
+        '<option value="local"'+(AIR_TRY.mode==='local'?' selected':'')+'>本地词典</option></select>'+
+      '<button class="btn ghost" id="tryPrompt" type="button">查看提示词</button><button class="btn" id="tryRun" type="button">试解析</button></div>'+
+    '<div id="tryOut" style="margin-top:14px"></div>';
+  $('#tryText').oninput=e=>{ AIR_TRY.text=e.target.value; };
+  $('#tryMode').onchange=e=>{ AIR_TRY.mode=e.target.value; };
+  $('#tryFileBtn').onclick=()=>$('#tryFile').click();
+  $('#tryFile').onchange=async e=>{
+    const files=[...e.target.files]; e.target.value=''; AIR_TRY.docs=[];
+    $('#tryFiles').textContent='正在提取文字…';
+    for(const f of files){
+      try{ const r=await fetch('/api/ai/extract?name='+encodeURIComponent(f.name),{method:'POST',credentials:'include',headers:{'content-type':'application/octet-stream'},body:f});
+        if(r.ok) AIR_TRY.docs.push(await r.json()); else airMsg(esc(f.name)+'：'+esc(await aiErr(r)),'err'); }
+      catch(err){ airMsg(esc(f.name)+'：上传失败','err'); }
+    }
+    $('#tryFiles').textContent=AIR_TRY.docs.map(d=>d.name+'（'+d.chars+' 字）').join('、');
+  };
+  const docs=()=>[...(AIR_TRY.text.trim()?[{name:'粘贴的文字',text:AIR_TRY.text}]:[]),...AIR_TRY.docs.filter(d=>d.chars).map(d=>({name:d.name,text:d.text}))];
+  $('#tryPrompt').onclick=async()=>{
+    const out=$('#tryOut'), d=docs(); if(!d.length){ out.innerHTML='<div class="note err">先粘贴文字或选择文件</div>'; return; }
+    const r=await apiFetch('/api/ai/prompt',{method:'POST',body:JSON.stringify({docs:d})});
+    if(!r.ok){ out.innerHTML='<div class="note err">'+esc(await aiErr(r))+'</div>'; return; }
+    const p=await r.json();
+    out.innerHTML='<div class="sub">发给大模型的系统提示词（字段词典 + 术语 + 理解规则 + 生效示例），约 '+p.system.length+' 字；资料原文另附 '+p.user.length+' 字。</div><div class="aiprompt">'+esc(p.system)+'</div>';
+  };
+  $('#tryRun').onclick=async()=>{
+    const out=$('#tryOut'), d=docs(), b=$('#tryRun'); if(!d.length){ out.innerHTML='<div class="note err">先粘贴文字或选择文件</div>'; return; }
+    b.disabled=true; b.textContent='解析中…'; out.innerHTML='';
+    try{
+      const r=await apiFetch('/api/ai/parse',{method:'POST',body:JSON.stringify({mode:AIR_TRY.mode,docs:d})});
+      if(!r.ok){ out.innerHTML='<div class="note err"><b>解析失败：</b>'+esc(await aiErr(r))+'</div>'; return; }
+      const R=await r.json(), FM=aiFieldMap(), ks=Object.keys(FM).filter(k=>R.fields[k]);
+      out.innerHTML='<div class="sub">'+esc(R.model)+' · '+(R.ms/1000).toFixed(1)+' 秒 · 解析出 '+ks.length+' 个字段'+((R.notes||[]).length?' · '+R.notes.map(esc).join('；'):'')+'</div>'+
+        '<div class="scroll" style="margin-top:8px"><table class="aitbl"><thead><tr><th class="l">字段</th><th class="l">解析值</th><th class="c">置信度</th><th class="l">来源 · 原文依据</th></tr></thead><tbody>'+
+        ks.map(k=>{ const x=R.fields[k]; return '<tr><td class="l">'+esc(FM[k].l)+'</td><td class="l">'+esc(aiShow(FM[k],x.value))+'</td><td class="c">'+aiConfPill(x.conf)+'</td>'+
+          '<td class="ev"><b>'+esc(x.file||'—')+'</b>'+(x.evidence?' · '+esc(x.evidence):'')+(x.flags||[]).map(t=>'<span class="flag">'+esc(t)+'</span>').join('')+'</td></tr>'; }).join('')+
+        '</tbody></table></div>';
+    }catch(e){ out.innerHTML='<div class="note err">网络中断或服务器无响应</div>'; }
+    finally{ b.disabled=false; b.textContent='试解析'; }
+  };
+}
+async function airSave(){
+  if(!AIR||!AIR_DIRTY) return;
+  const b=$('#airSave'); b.disabled=true;
+  try{
+    const r=await apiFetch('/api/ai/rules',{method:'PUT',body:JSON.stringify(AIR)});
+    if(!r.ok) throw new Error(await aiErr(r));
+    AIR=await r.json(); airDirty(false); airTabs(); airBody(); airMsg('规则已保存，下一次解析立即生效。','ok');
+  }catch(e){ airDirty(true); airMsg('<b>保存失败：</b>'+esc(e.message),'err'); }
+}
+async function airReset(){
+  if(!confirm('恢复出厂规则？字段词典、术语、理解规则都会回到默认值（已沉淀的纠正示例保留）。恢复前可先点「导出」留一份。')) return;
+  try{
+    const r=await apiFetch('/api/ai/rules/reset',{method:'POST'});
+    if(!r.ok) throw new Error(await aiErr(r));
+    AIR=await r.json(); airDirty(false); airTabs(); airBody(); airMsg('已恢复出厂规则。','ok');
+  }catch(e){ airMsg('<b>恢复失败：</b>'+esc(e.message),'err'); }
+}
+
 /* ============================ 后端联通（可选） ============================ */
 // 部署为 server/public/index.html 由 Node 后端托管时，这些 fetch 会命中同源的
 // /api/*，井库/定额库/填报数据改成读写服务器；作为 claude.ai artifact 或本地
@@ -4741,6 +5220,7 @@ function rerenderAll(){
   if(TINFO==null){ const n=tiNow(); TINFO=[]; tiEnsureRoster(n.y,n.m); saveTinfo(); }
   if(!Array.isArray(PERF)) PERF=[];   // 班子绩效手动项：首次使用时空账，录入后再落盘
   rerenderAll(); go('dash');
+  loadAiStatus();
 })();
 </script>
 
