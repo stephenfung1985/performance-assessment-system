@@ -4,3 +4,6 @@ server/.env
 server/data/*.json.tmp-*
 server/data/*.corrupt-*
 server/backups/
+# 运行时数据与日志：各台机器、线上服务器各自一份，进版本库会在 pull / 上传代码时互相覆盖
+server/data/
+logs/

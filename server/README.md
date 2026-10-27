@@ -19,7 +19,8 @@ server/
     seed.js             首次启动的初始化（写入附件1 定额基线、建默认管理员）
   public/
     index.html          前端页面（与桌面那份同源，替换即可升级）
-  data/                  运行时生成，存实际数据，不进版本库
+  data/                  运行时生成，存实际数据，不进版本库（线上用 .env 的 DATA_DIR 放到代码目录之外）
+  backups/               「数据备份」页生成的快照，总在数据目录旁边
   .env                   本机配置，不进版本库（.env.example 是模板）
 ```
 
@@ -141,19 +142,28 @@ scp -r server root@你的服务器公网IP:/opt/kaohe-server
 
 ```bash
 cd /opt/kaohe-server
-rm -rf data .env          # 保险起见，确保是全新状态
+rm -rf data backups .env  # 只在首次部署做：清掉随代码带上来的本机数据
+mkdir -p /var/lib/kaohe   # 线上数据放这里，和代码目录分开
 npm install --omit=dev
 cp .env.example .env
-nano .env                 # 或用 vi，改下面三处
+nano .env                 # 或用 vi，改下面四处
 ```
 
-`.env` 里至少改这三行：
+`.env` 里至少改这四行（JWT_SECRET 用 `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`
+生成一串随机字符粘进去；COOKIE_SECURE 没有 https 就必须是 0，改成 1 反而会导致登录态存不住）。
+**每行只写 `键=值`，后面不要跟 `#` 注释**——systemd 会把注释当成值的一部分：
 
 ```
 PORT=4000
-JWT_SECRET=换成一长串随机字符（在服务器上跑一下：node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"，把输出粘进来）
-COOKIE_SECURE=0            # 没有 https 就必须是 0，改成 1 反而会导致登录态存不住
+JWT_SECRET=上面生成的随机字符
+COOKIE_SECURE=0
+DATA_DIR=/var/lib/kaohe/data
 ```
+
+`DATA_DIR` 是防止「重新上传代码把线上数据冲掉」的关键：数据和备份都在
+`/var/lib/kaohe/` 下，`/opt/kaohe-server` 整个覆盖、删掉重传都碰不到它们。
+启动日志里的「数据目录：」一行应显示 `/var/lib/kaohe/data`，显示的是
+`/opt/kaohe-server/data` 就说明 `.env` 没生效，先别让大家用。
 
 ### 6. 用 systemd 常驻运行（开机自启、崩了自动重启）
 
@@ -230,9 +240,47 @@ IP 直连拿不到大部分免费证书（Let's Encrypt 这类主流 CA 都要�
 如果你们平台习惯容器化，告诉我，我再补一份 Dockerfile 和 docker-compose.yml——
 现在这版先给最简单能跑起来的裸 Node + systemd 方案。
 
+## 更新线上代码
+
+设好 `DATA_DIR` 之后，更新代码就是把本机 `server` 文件夹重新传一遍（scp / WinSCP 覆盖即可），
+本机的 `data/`、`backups/` 跟着传上去也没关系——服务器根本不读它们。传完：
+
+```bash
+cd /opt/kaohe-server
+npm install --omit=dev
+systemctl restart kaohe
+journalctl -u kaohe -n 20     # 确认「数据目录：/var/lib/kaohe/data」
+```
+
+**不要再跑第 5 步的 `rm -rf` 和 `cp .env.example .env`**，那是首次部署用的；`.env` 被覆盖会丢掉
+`JWT_SECRET` 和 `DATA_DIR`，所有人被踢下线、数据又回到代码目录里那份。
+
+### 已经上线、数据还在 /opt/kaohe-server/data 的服务器：迁移一次
+
+```bash
+systemctl stop kaohe
+mkdir -p /var/lib/kaohe
+cp -a /opt/kaohe-server/data /var/lib/kaohe/data
+[ -d /opt/kaohe-server/backups ] && cp -a /opt/kaohe-server/backups /var/lib/kaohe/backups
+echo 'DATA_DIR=/var/lib/kaohe/data' >> /opt/kaohe-server/.env
+systemctl start kaohe
+journalctl -u kaohe -n 20     # 确认数据目录已是 /var/lib/kaohe/data，登录核对数据无误
+```
+
+旧的 `/opt/kaohe-server/data` 先留着别删，确认新位置一切正常后再清理。
+
+## 关于 git：data/ 和 logs/ 不进版本库
+
+`server/data/` 和 `logs/` 已从 git 跟踪中移除并写进 `.gitignore`，各台电脑、线上服务器各自
+保留自己的数据，`git pull` / 上传代码不再互相覆盖。
+
+**每台电脑第一次拉取这个改动之前，先把 `server/data/` 整个复制到别处**——这次提交在 git 看来
+是「删除这些文件」，拉取时会把本地的数据文件一并删掉；拉完再把复制出去的 `data/` 拷回原位即可，
+之后就再也不会被 git 动到。
+
 ## 数据备份
 
-所有数据就是 `data/` 目录下的几个 JSON 文件（`wells.json` 井库、`quota.json`
+所有数据就是数据目录（默认 `data/`，线上为 `DATA_DIR`）下的几个 JSON 文件（`wells.json` 井库、`quota.json`
 定额库、`filings-<年份>.json` 月度填报、`users.json` 账号），定期整份拷走
 （`cp -r data/ 备份路径/data-$(date +%F)/`）就是完整备份，恢复直接拷回去重启
 服务即可，不需要数据库层面的导出导入。

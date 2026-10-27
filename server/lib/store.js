@@ -9,7 +9,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// 线上部署在 .env 里设 DATA_DIR 指到代码目录之外（如 /var/lib/kaohe/data），
+// 重新上传/覆盖代码文件夹时碰不到数据；不设则沿用 server/data，本机双击启动不受影响。
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(__dirname, '..', process.env.DATA_DIR)
+  : path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 function keyPath(key) {
