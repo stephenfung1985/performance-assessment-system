@@ -418,7 +418,8 @@ main.full{padding-bottom:26px}
   <button class="navbtn" data-go="team"><span class="n">06</span>班子绩效</button>
   <button class="navbtn" data-go="tinfo"><span class="n">07</span>队伍信息</button>
   <button class="navbtn" data-go="bak"><span class="n">08</span>数据备份</button>
-  <button class="navbtn" data-go="airules" id="navAiRules" hidden><span class="n">09</span>解析规则</button>
+  <button class="navbtn" data-go="owp"><span class="n">09</span>一井一策</button>
+  <button class="navbtn" data-go="airules" id="navAiRules" hidden><span class="n">10</span>解析规则</button>
   <div class="railfoot">
     依据：2026年经营责任制实施办法 · 附件1 考核标准及相关定额 · 附件2 大港油区单井经营考核办法（试行）· 附件3 钻井队班子绩效考核办法
   </div>
@@ -875,7 +876,39 @@ main.full{padding-bottom:26px}
 </section>
 
 
-<!-- ============ 09 解析规则（AI 解析导入的调教台，仅管理员） ============ -->
+<!-- ============ 09 一井一策（未涵盖区块按设计书测算定额） ============ -->
+<section class="page" id="p-owp">
+  <div class="phead">
+    <div>
+      <h2>一井一策</h2>
+      <p>新区块、特殊井等定额库未涵盖的井，按钻井设计书测算定额：日进尺按策划周期校准、参照区块类比，其余定额由各区块日标准折算。测算结果可手动关联到单井参数录入表，作为该井的一井一策自定义定额。</p>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn ghost" id="owpNew" type="button">新建测算</button>
+      <button class="btn ghost" id="owpAi" type="button" hidden>AI 导入设计书</button>
+      <button class="btn" id="owpSave" type="button">保存测算</button>
+    </div>
+  </div>
+  <div id="owpMsg"></div>
+  <div class="card" style="margin-top:16px">
+    <header><h3>测算参数</h3><span class="eyebrow" id="owpCurLabel"></span></header>
+    <div class="body" id="owpForm"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <header><h3>参照区块</h3><span class="eyebrow">类比日进尺、日能耗、毛益率</span></header>
+    <div class="body" id="owpRefs"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <header><h3>测算结果</h3><span class="eyebrow" id="owpConf"></span></header>
+    <div class="body" id="owpRes"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <header><h3>测算记录</h3><span class="eyebrow" id="owpCount"></span></header>
+    <div class="body"><div class="scroll"><table id="owpTbl"></table></div></div>
+  </div>
+</section>
+
+<!-- ============ 10 解析规则（AI 解析导入的调教台，仅管理员） ============ -->
 <section class="page" id="p-airules">
   <div class="phead">
     <div>
@@ -1025,7 +1058,10 @@ const S = {
     revenue:0, gmAmount:0,
     hasAccident:false, accNotes:[], honorAward:0, multiRig:false, grossMargin:0,
     qualityDeduct:0, damageDeduct:0,
-    oneWellOnePolicy:false, custom:{}
+    oneWellOnePolicy:false, custom:{},
+    // 一井一策测算参数：取自钻井工程设计书的设计值，可由 AI 导入资料解析回填
+    designDepth:0, designVertDepth:0, designHorizLen:0, designDisp:0, designTechCasing:0, maxIncl:0,
+    targetFm:'', pressureCoef:0, mudDensity:0, rigModel:'', powerMode:'', designSections:[]
   }
 };
 const SRC_LABEL = { sys:'系统直采', ai:'AI解析', man:'人工录入' };
@@ -1249,8 +1285,40 @@ const F = [
     [{k:'multiRig',l:'一队多机（跨区域）',t:'chk'},{k:'honorAward',l:'特殊荣誉奖（元）',t:'num'}],
     [{k:'grossMargin',l:'单井毛益率（%，已填收入/毛益额时自动推导）',t:'num',step:.01}],
     [{k:'qualityDeduct',l:'井筒质量扣款（元）',t:'num'},{k:'damageDeduct',l:'工具损毁赔偿（元）',t:'num'}]
+  ]},
+  // 勾选一井一策、或已经填过（如 AI 导入回填）才显示
+  {leg:'一井一策测算参数（设计书 · 设计值）', show:()=>S.w.oneWellOnePolicy||hasDesignParams(), rows:[
+    [{k:'designDepth',l:'设计井深（米）',t:'num'},{k:'designVertDepth',l:'设计垂深（米）',t:'num'},{k:'maxIncl',l:'最大井斜（°）',t:'num',step:.1}],
+    [{k:'designHorizLen',l:'设计水平段长（米）',t:'num'},{k:'designDisp',l:'设计水平位移（米）',t:'num'},{k:'designTechCasing',l:'设计技套下深（米）',t:'num'}],
+    [{k:'targetFm',l:'目的层',t:'text'},{k:'pressureCoef',l:'地层压力系数',t:'num',step:.01},{k:'mudDensity',l:'设计钻井液密度（g/cm³）',t:'num',step:.01}],
+    [{k:'rigModel',l:'设计钻机',t:'select',blank:'— 未填 —',opt:['50型','70型']},{k:'powerMode',l:'动力方式',t:'select',blank:'— 未填 —',opt:['网电','柴油','网电+柴油']}],
+    [{k:'designSections',l:'分开次井身结构',t:'sections'}]
   ]}
 ];
+const SEC_COLS=[['phase','开次',''],['from','井段起','米'],['to','井段止','米'],['bit','钻头尺寸','mm'],['casing','套管下深','米'],['rop','设计机速','m/h'],['days','分段周期','天']];
+const DESIGN_KEYS=['designDepth','designVertDepth','designHorizLen','designDisp','designTechCasing','maxIncl','targetFm','pressureCoef','mudDensity','rigModel','powerMode','designSections'];
+function hasDesignParams(){ return DESIGN_KEYS.some(k=>{ const v=S.w[k]; return Array.isArray(v)?v.length>0:(v!==''&&v!=null&&v!==0); }); }
+function secText(rows){
+  if(!Array.isArray(rows)||!rows.length) return '—';
+  const n=v=>v==null||v===''?'?':fmt(v,v%1?1:0);
+  return rows.length+' 开：'+rows.map(r=>r.phase+'开 '+n(r.from)+'–'+n(r.to)+'m'+(r.bit?' Φ'+r.bit:'')+(r.rop?' '+r.rop+'m/h':'')+(r.days?' '+r.days+'天':'')).join('；');
+}
+// 分开次井身结构的逐格编辑表。obj 默认是单井录入表，一井一策测算页传自己的参数对象和刷新函数
+function sectionsBox(k,obj,onChange){
+  obj=obj||S.w;
+  const changed=onChange||(full=>{ setSrc(k,'man'); full?render():renderResults(); });
+  if(!Array.isArray(obj[k])) obj[k]=[];
+  const rows=obj[k], box=el('div'); box.style.cssText='overflow-x:auto';
+  box.innerHTML='<table><thead><tr>'+SEC_COLS.map(c=>'<th>'+c[1]+(c[2]?'（'+c[2]+'）':'')+'</th>').join('')+'<th style="width:60px"></th></tr></thead><tbody>'+
+    rows.map((r,i)=>'<tr>'+SEC_COLS.map(([ck])=>'<td><input type="number" step="any" data-i="'+i+'" data-c="'+ck+'" value="'+(r[ck]==null?'':r[ck])+'" style="margin:0;min-width:64px"></td>').join('')+
+      '<td><button class="btn ghost mini" data-del="'+i+'" type="button">删除</button></td></tr>').join('')+'</tbody></table>';
+  box.querySelectorAll('input[data-c]').forEach(inp=>inp.addEventListener('input',e=>{
+    const v=e.target.value.trim(); rows[+e.target.dataset.i][e.target.dataset.c]= v===''?null:parseFloat(v); changed(false); }));
+  box.querySelectorAll('button[data-del]').forEach(b=>b.addEventListener('click',()=>{ rows.splice(+b.dataset.del,1); changed(true); }));
+  const add=el('button','btn ghost mini','＋ 增加一开'); add.type='button'; add.style.marginTop='8px';
+  add.addEventListener('click',()=>{ const last=rows[rows.length-1]; rows.push({phase:rows.length+1,from:last?last.to:0,to:null,bit:null,casing:null,rop:null,days:null}); changed(true); });
+  box.appendChild(add); return box;
+}
 
 function field(f){
   const k=f.k, v=S.w[k], s=src(k);
@@ -1261,7 +1329,9 @@ function field(f){
   d.innerHTML = `<label>${f.l}<span class="pill ${s}"${tip}>${SRC_LABEL[s]}${conf}</span></label>`;
 
   let inp;
-  if(f.t==='chk'){
+  if(f.t==='sections'){
+    inp=sectionsBox(k);
+  } else if(f.t==='chk'){
     inp=el('div','chk'); inp.innerHTML=`<input type="checkbox" id="f_${k}" ${v?'checked':''}><span>${v?'是':'否'}</span>`;
     inp.querySelector('input').addEventListener('change',e=>{ S.w[k]=e.target.checked; setSrc(k,'man'); render(); });
   } else if(f.t==='select'){
@@ -1316,6 +1386,7 @@ function accNoteBox(){
 function renderForm(){
   const host=$('#wellForm'); host.innerHTML='';
   F.forEach(g=>{
+    if(g.show && !g.show()) return;
     const fs=el('fieldset'); fs.appendChild(el('legend',null,g.leg));
     g.rows.forEach(r=>{
       const wrap=el('div', r.length===3?'f3':(r.length===2?'f2':''));
@@ -1341,7 +1412,8 @@ function renderForm(){
       d.appendChild(inp); wrap2.appendChild(d);
     });
     cf.appendChild(wrap2);
-    cf.appendChild(Object.assign(el('p','sub'),{textContent:'区块无附件1定额或为新开发区块时启用。填写该井的实测/预算定额，完井后由「定额库 › 一井一策定额补充」页汇总同区块 2 口以上样本，形成正式定额补入定额库。'}));
+    cf.appendChild(owpFormBox());
+    cf.appendChild(Object.assign(el('p','sub'),{textContent:'区块无附件1定额或为新开发区块时启用。填写该井的实测/预算定额，或到左侧「一井一策」按设计书测算后关联过来；完井后由「定额库 › 一井一策定额补充」页汇总同区块 2 口以上样本，形成正式定额补入定额库。'}));
     host.appendChild(cf);
   }
 
@@ -1737,7 +1809,7 @@ function submitWell(){
 }
 function loadWell(id,edit){
   const r=WELLS.find(x=>x.id===id); if(!r) return;
-  S.w=clone(r.w); S.prov=clone(r.prov);
+  S.w=Object.assign(clone(W_DEFAULT),clone(r.w)); S.prov=clone(r.prov);   // 旧记录没有后来新增的字段，按默认值补齐
   EDIT_ID = edit ? id : null;
   wellMsg(edit ? '正在编辑 <b>'+r.w.wellNo+'</b>（'+r.id+'）。修改后点「更新入库」覆盖原记录，或点「取消编辑」放弃。'
                 : '已调取 <b>'+r.w.wellNo+'</b> 到表单。当前为新建模式，提交将作为新记录入库。', edit?'':'ok');
@@ -1789,7 +1861,7 @@ function renderWellActions(){
       : '<button class="btn ghost" id="resetWell" type="button">恢复默认值</button>')+
     (AI_STATUS?'<button class="btn ghost" id="aiImport" type="button" title="上传 Word / PDF / Excel 单井资料，解析后逐项核对回填">AI 导入资料</button>':'');
   $('#submitWell').onclick=submitWell;
-  if($('#aiImport')) $('#aiImport').onclick=openAiImport;
+  if($('#aiImport')) $('#aiImport').onclick=()=>openAiImport(AI_WELL_TARGET);
   $('#resetWell').onclick=resetWellForm;
   const ce=$('#cancelEdit');
   if(ce) ce.onclick=()=>{ EDIT_ID=null; wellMsg('已退出编辑，表单保留当前参数。',''); renderWellActions(); renderWellStore(); };
@@ -4439,6 +4511,7 @@ function go(id){
   if(id==='tinfo') renderTinfo();
   if(id==='bak') renderBak();
   if(id==='airules') renderAiRules();
+  if(id==='owp') renderOwp();
   if(id==='well') requestAnimationFrame(syncPhH);
   window.scrollTo({top:0,behavior:'instant'});
 }
@@ -4683,6 +4756,292 @@ renderRollRules();
     if(n) PF.wellNo=n, preFillFromHistory();
     go('pre'); };
 })();
+/* ============================ 一井一策（独立测算模块） ============================
+   未涵盖区块按设计书测算 9 项定额，口径见《考核规则手册》1.7 节：
+   · 日进尺：策划周期法 = 设计井深 ÷ 策划周期 × 校准系数 K，K = Σ策划周期 ÷ Σ实际考核周期
+     （井库里同井型同开次 ≥3 口；不够取全部井 ≥3 口；再不够按 1）；类比法 = 参照区块日进尺中位数。
+     两者都有时采用策划周期法，偏差超过 20% 降低可信度、提示复核。
+   · 米费 / 一般材料 / 润滑油 / 项修 / 生活污水 / 生产水：定额库里「定额 × 日进尺」= 每天的标准，各区块几乎相同，
+     取全库中位数 ÷ 日进尺。
+   · 能耗：参照区块日能耗（能耗定额 × 日进尺）中位数 ÷ 日进尺。毛益率：参照区块毛益率平均指标中位数。
+   每项都可以手填「采用值」；关联到单井时带入的是采用值。测算记录存服务器 owpcalc.json，随数据备份。 */
+const OWPC_KEY='kh-owpcalc-v1';
+let OWPC=(function(){ try{ const r=localStorage.getItem(OWPC_KEY); if(r){ const p=JSON.parse(r); if(Array.isArray(p)) return p; } }catch(e){} return []; })();
+let OWPC_SAVE_T=null;
+function saveOwpc(){ try{ localStorage.setItem(OWPC_KEY,JSON.stringify(OWPC)); }catch(e){}
+  clearTimeout(OWPC_SAVE_T);
+  OWPC_SAVE_T=setTimeout(()=>{ OWPC_SAVE_T=null; apiSave('owpcalc','一井一策测算','/api/owpcalc',()=>OWPC); },300); }
+
+const OWP_ITEMS=[['dayfoot','平均日进尺','米/天',1],['mifei','米费','元/米·人',6],['mat','一般材料','元/米',4],['energy','能耗','元/米',2],
+  ['lube','润滑油','元/米',4],['repair','项修','元/米',4],['prodwater','生产水','元/米',4],['sewage','生活污水','元/米',4],['gm_avg','毛益率平均指标','%',2]];
+const OWP_DAILY={mifei:'元/(人·天)',mat:'元/天',lube:'元/天',repair:'元/天',prodwater:'元/天',sewage:'元/天'};
+const OWP_F=[
+  [{k:'wellNo',l:'井号 / 测算名称',t:'text'},{k:'wellType',l:'井型',t:'select',opt:['定向井','水平井','直井']},{k:'phase',l:'开次',t:'select',opt:[2,3,4]}],
+  [{k:'block',l:'区块（新区块名）',t:'text'},{k:'planDays',l:'策划周期（天）',t:'num',step:.1}],
+  ...F.find(g=>g.show).rows
+];
+function owpBlank(){
+  return {id:'', at:0, by:'', refs:null, adopt:{}, prov:{}, links:[],
+    inp:Object.assign({wellNo:'',wellType:'定向井',phase:3,block:'',planDays:0}, Object.fromEntries(DESIGN_KEYS.map(k=>[k,clone(W_DEFAULT[k])])))};
+}
+let OWP=owpBlank();   // 正在编辑的测算（打开记录时是它的副本，点「保存测算」才写回）
+const owpName=o=>(o.inp.wellNo||'').trim()||'未命名测算';
+const bkey=b=>b.wellType+'|'+b.block+'|'+b.phase;
+function owpMsg(html,cls){ const m=$('#owpMsg'); if(!m) return;
+  m.innerHTML = html ? '<div class="note '+(cls||'')+'" style="margin-top:10px">'+html+'</div>' : '';
+  msgAutoHide(m,()=>owpMsg('')); }
+
+// 默认参照：同井型同开次的全部区块；没有同井型的退到同开次
+function owpGroup(inp){
+  const g=Q.blocks.filter(b=>b.wellType===inp.wellType&&+b.phase===+inp.phase&&b.dayfoot>0);
+  return g.length ? {list:g, scope:'同井型同开次'} : {list:Q.blocks.filter(b=>+b.phase===+inp.phase&&b.dayfoot>0), scope:'同开次（定额库没有同井型区块）'};
+}
+function owpRefs(){
+  const all=owpGroup(OWP.inp);
+  const sel=OWP.refs&&OWP.refs.length ? Q.blocks.filter(b=>OWP.refs.includes(bkey(b))&&b.dayfoot>0) : all.list;
+  return {all, sel, custom:!!(OWP.refs&&OWP.refs.length)};
+}
+function owpK(inp){
+  const days=w=>+w.assessedCycleDays||+w.cycleDays||0;
+  const ok=(WELLS||[]).filter(r=>+r.w.planDays>0&&days(r.w)>0&&+r.w.footage>0);
+  const grp=ok.filter(r=>r.w.wellType===inp.wellType&&+r.w.phase===+inp.phase);
+  const use=grp.length>=3?grp:ok.length>=3?ok:[];
+  if(!use.length) return {k:1, n:0, scope:'井库里填了策划周期和实际周期的井不足 3 口，暂按 1.00'};
+  const sp=use.reduce((s,r)=>s+(+r.w.planDays),0), sa=use.reduce((s,r)=>s+days(r.w),0);
+  return {k:sp/sa, n:use.length, scope:(grp.length>=3?'同井型同开次 ':'全部井 ')+use.length+' 口：Σ策划周期 '+fmt(sp,1)+' 天 ÷ Σ实际考核周期 '+fmt(sa,1)+' 天'};
+}
+const owpNum=v=>v!=null&&v!==''&&isFinite(+v);
+function owpAdopt(k,sug){ const a=OWP.adopt[k]; return owpNum(a)?+a:sug; }
+
+function owpCalc(){
+  const o=OWP.inp, items={}, {all,sel,custom}=owpRefs(), K=owpK(o);
+  const secs=Array.isArray(o.designSections)?o.designSections:[];
+  let days=+o.planDays, daysSrc='策划周期';
+  if(!(days>0)){ const sd=secs.reduce((s,r)=>s+(+r.days||0),0); if(sd>0){ days=sd; daysSrc='分段周期合计（不含完井，偏乐观）'; } }
+  const lastTo=secs.length?+secs[secs.length-1].to||0:0;
+  const depth=+o.designDepth||lastTo, depthSrc=+o.designDepth?'设计井深':'井身结构最后一开止点';
+  const plan = depth>0&&days>0 ? depth/days*K.k : null;
+  const ana = sel.length ? median(sel.map(b=>b.dayfoot)) : null;
+  const dev = plan!=null&&ana ? (plan-ana)/ana : null;
+  items.dayfoot={sug: plan!=null?plan:ana,
+    basis: plan!=null ? '策划周期法：'+depthSrc+' '+fmt(depth)+' 米 ÷ '+daysSrc+' '+fmt(days,1)+' 天 × K '+K.k.toFixed(3)
+      : ana!=null ? '类比法：'+sel.length+' 个参照区块日进尺中位数（缺设计井深或策划周期，无法用策划周期法）' : '缺设计井深 / 策划周期，也没有参照区块'};
+  const df=owpAdopt('dayfoot',items.dayfoot.sug);
+  Object.entries(OWP_DAILY).forEach(([k,u])=>{
+    const v=Q.blocks.filter(b=>b[k]>0&&b.dayfoot>0).map(b=>b[k]*b.dayfoot), std=median(v);
+    items[k]={sug: df>0&&std ? std/df : null, basis: std ? '全库 '+v.length+' 个区块日标准中位数 '+fmt(std,2)+' '+u+' ÷ 日进尺' : '定额库没有可用数据'};
+  });
+  const eSrc=sel.filter(b=>b.energy>0).length?sel.filter(b=>b.energy>0):all.list.filter(b=>b.energy>0);
+  const dE=median(eSrc.map(b=>b.energy*b.dayfoot));
+  items.energy={sug: df>0&&dE ? dE/df : null, basis: dE ? eSrc.length+' 个参照区块日能耗中位数 '+fmt(dE)+' 元/天 ÷ 日进尺' : '参照区块没有能耗数据'};
+  const gSrc=sel.filter(b=>b.gm_avg!=null).length?sel.filter(b=>b.gm_avg!=null):all.list.filter(b=>b.gm_avg!=null);
+  const gm=gSrc.length?median(gSrc.map(b=>b.gm_avg))*100:null;
+  items.gm_avg={sug:gm, basis: gm!=null ? gSrc.length+' 个'+(gSrc===sel?'参照':'同组')+'区块毛益率平均指标中位数' : '参照区块都没有毛益率指标，请手填'};
+  OWP_ITEMS.forEach(([k])=>{ items[k].val=owpAdopt(k,items[k].sug); items[k].manual=owpNum(OWP.adopt[k]); });
+  let conf, why;
+  if(plan!=null&&ana){ const a=Math.abs(dev);
+    conf = K.n>=3&&a<=0.2 ? '高' : a<=0.35 ? '中' : '需复核';
+    why='策划周期法与类比法偏差 '+(dev>0?'+':'')+(dev*100).toFixed(1)+'%'+(K.n<3?'，K 未校准':''); }
+  else if(plan!=null){ conf=K.n>=3?'中':'需复核'; why='只有策划周期法（没有参照区块）'; }
+  else if(ana){ conf=sel.length>=3?'中':'需复核'; why='只有类比法（缺设计井深或策划周期）'; }
+  else { conf='无法测算'; why='缺设计井深 / 策划周期，也没有参照区块'; }
+  return {items, plan, ana, dev, K, sel, all, custom, conf, why, depth, days, daysSrc};
+}
+
+function renderOwp(){
+  if(!$('#owpForm')) return;
+  const ai=$('#owpAi'); if(ai) ai.hidden=!AI_STATUS;
+  $('#owpCurLabel').textContent = OWP.id ? '正在编辑：'+owpName(OWP)+'（'+stamp(OWP.at)+' 保存）' : '新测算（尚未保存）';
+  const host=$('#owpForm'); host.innerHTML='';
+  OWP_F.forEach(r=>{
+    const wrap=el('div', r.length===3?'f3':(r.length===2?'f2':''));
+    r.forEach(f=>wrap.appendChild(owpField(f)));
+    host.appendChild(wrap);
+  });
+  renderOwpRefs(); renderOwpCalc(); renderOwpList();
+}
+function owpField(f){
+  const o=OWP.inp, k=f.k, v=o[k], p=OWP.prov[k];
+  const d=el('div','fld'); d.dataset.src=p?p.src:'man';
+  d.innerHTML='<label>'+f.l+(p&&p.src==='ai'?'<span class="pill ai">AI解析 '+Math.round((p.conf||0)*100)+'%</span>':'')+'</label>';
+  const touched=()=>{ delete OWP.prov[k]; };
+  let inp;
+  if(f.t==='sections') inp=sectionsBox(k,o,full=>{ touched(); full?renderOwp():renderOwpCalc(); });
+  else if(f.t==='select'){
+    inp=el('select');
+    if(f.blank){ const op=el('option',null,f.blank); op.value=''; inp.appendChild(op); }
+    (f.opt||[]).forEach(x=>{ const op=el('option',null,x); op.value=x; if(String(x)===String(v)) op.selected=true; inp.appendChild(op); });
+    inp.onchange=e=>{ o[k]= k==='phase'?+e.target.value:e.target.value; touched(); if(k==='wellType'||k==='phase') OWP.refs=null; renderOwp(); };
+  } else {
+    inp=el('input'); inp.type=f.t==='num'?'number':'text'; if(f.step) inp.step=f.step;
+    inp.value = v==null?'':v;
+    inp.oninput=e=>{ o[k]= f.t==='num'?(parseFloat(e.target.value)||0):e.target.value; touched(); renderOwpCalc(); };
+  }
+  d.appendChild(inp);
+  if(p&&p.file){ const ev=el('div','provev'); ev.title=p.evidence||''; ev.innerHTML='<b>'+esc(p.file)+'</b>'+(p.evidence?' · '+esc(p.evidence):''); d.appendChild(ev); }
+  return d;
+}
+function renderOwpRefs(){
+  const host=$('#owpRefs'); if(!host) return;
+  const {all,sel,custom}=owpRefs(), on=new Set(sel.map(bkey));
+  const pool=[...all.list, ...Q.blocks.filter(b=>b.dayfoot>0&&on.has(bkey(b))&&!all.list.includes(b))];
+  host.innerHTML='<p class="sub" style="margin:0 0 10px">默认参照'+all.scope+'的全部 '+all.list.length+' 个区块。条件相近、相邻的区块更有代表性：勾选其中几个，类比只用勾选的区块；全部不勾回到默认。</p>'+
+    '<div class="scroll"><table class="aitbl"><thead><tr><th class="c">参照</th><th class="l">井型 · 区块 · 开次</th><th>日进尺（米/天）</th><th>日能耗（元/天）</th><th>毛益率平均指标</th></tr></thead><tbody>'+
+    pool.map(b=>'<tr class="'+(on.has(bkey(b))?'':'skip')+'"><td class="c"><input type="checkbox" data-ref="'+esc(bkey(b))+'"'+(custom&&on.has(bkey(b))?' checked':'')+' aria-label="参照 '+esc(b.block)+'"></td>'+
+      '<td class="l">'+esc(b.wellType+' · '+b.block+' · '+b.phase+'开')+'</td><td>'+fmt(b.dayfoot,1)+'</td><td>'+(b.energy>0?fmt(b.energy*b.dayfoot):'—')+'</td><td>'+(b.gm_avg!=null?pct(b.gm_avg,2):'—')+'</td></tr>').join('')+
+    '</tbody></table></div>'+
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><span class="sub">加入其它区块：</span><select id="owpRefAdd" style="max-width:320px"><option value="">— 从定额库选择 —</option>'+
+    Q.blocks.filter(b=>b.dayfoot>0&&!pool.includes(b)).map(b=>'<option value="'+esc(bkey(b))+'">'+esc(b.wellType+' · '+b.block+' · '+b.phase+'开')+'</option>').join('')+'</select></div>';
+  host.querySelectorAll('[data-ref]').forEach(c=>c.onchange=()=>{
+    const cur=new Set(OWP.refs||[]); c.checked?cur.add(c.dataset.ref):cur.delete(c.dataset.ref);
+    OWP.refs=[...cur]; renderOwpRefs(); renderOwpCalc(); });
+  $('#owpRefAdd').onchange=e=>{ if(!e.target.value) return; OWP.refs=[...new Set([...(OWP.refs||[]),e.target.value])]; renderOwpRefs(); renderOwpCalc(); };
+}
+const OWP_CONF_CLS={'高':'hi','中':'mid','需复核':'lo','无法测算':'lo'};
+function renderOwpCalc(){
+  const host=$('#owpRes'); if(!host) return;
+  const c=owpCalc(), it=c.items;
+  $('#owpConf').innerHTML='可信度 <span class="pill '+OWP_CONF_CLS[c.conf]+'">'+c.conf+'</span>';
+  const dfRow=(l,v,b)=>'<div class="kv"><span>'+l+'</span><span>'+(v!=null?fmt(v,1)+' 米/天':'—')+'</span></div>'+(b?'<div class="sub" style="margin:-2px 0 8px">'+b+'</div>':'');
+  host.innerHTML=
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:4px 24px;margin-bottom:12px">'+
+      '<div>'+dfRow('策划周期法',c.plan, c.plan!=null?'设计井深 '+fmt(c.depth)+' 米 ÷ '+c.daysSrc+' '+fmt(c.days,1)+' 天 × K '+c.K.k.toFixed(3)+'<br>K：'+esc(c.K.scope):'缺设计井深或策划周期')+'</div>'+
+      '<div>'+dfRow('类比法',c.ana, c.ana!=null?(c.custom?'勾选的 ':'')+c.sel.length+' 个参照区块日进尺中位数':'没有参照区块')+
+        '<div class="kv"><span>两法偏差</span><span>'+(c.dev!=null?(c.dev>0?'+':'')+(c.dev*100).toFixed(1)+'%':'—')+'</span></div><div class="sub">'+esc(c.why)+'</div></div>'+
+    '</div>'+
+    '<div class="scroll"><table class="aitbl"><thead><tr><th class="l">定额项</th><th>测算值</th><th class="l">依据</th><th>采用值（可改）</th></tr></thead><tbody>'+
+    OWP_ITEMS.map(([k,l,u,d])=>{ const x=it[k];
+      return '<tr><td class="l">'+l+' <span class="sub">'+u+'</span></td><td>'+(x.sug!=null?fmt(x.sug,d):'—')+'</td><td class="ev">'+esc(x.basis)+'</td>'+
+        '<td><input type="number" step="any" data-adopt="'+k+'" value="'+(x.manual?OWP.adopt[k]:'')+'" placeholder="'+(x.sug!=null?(+x.sug.toFixed(d)):'请填写')+'" style="margin:0;min-width:110px'+(x.manual?';border-color:var(--signal)':'')+'">'+
+        (x.manual?'<div class="sub">手填（测算值 '+(x.sug!=null?fmt(x.sug,d):'—')+'）</div>':'')+'</td></tr>'; }).join('')+
+    '</tbody></table></div>'+
+    '<p class="sub" style="margin:10px 0 0">采用值留空即用测算值；改了日进尺，其余按日标准折算的定额会跟着变。'+
+      '新区块无定额执行相近区块定额须经考核办公室确认（《考核规则手册》1.5）。</p>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn" id="owpLink" type="button">关联到单井参数录入表…</button></div>';
+  host.querySelectorAll('[data-adopt]').forEach(inp=>inp.onchange=e=>{
+    const k=e.target.dataset.adopt, v=e.target.value.trim();
+    if(v===''||!isFinite(+v)) delete OWP.adopt[k]; else OWP.adopt[k]=+v;
+    renderOwpCalc(); });
+  $('#owpLink').onclick=owpLinkDialog;
+}
+function renderOwpList(){
+  const T=$('#owpTbl'); if(!T) return;
+  $('#owpCount').textContent=OWPC.length?OWPC.length+' 条':'';
+  if(!OWPC.length){ T.innerHTML='<tbody><tr><td class="dim" style="font-family:var(--sans)">还没有保存的测算。填好参数后点右上角「保存测算」。</td></tr></tbody>'; return; }
+  const v=(r,k,d)=>{ const x=r.res&&r.res[k]; return x!=null?fmt(x,d):'—'; };
+  T.innerHTML='<thead><tr><th class="l">井号 / 名称</th><th class="l">井型 · 区块 · 开次</th><th>日进尺</th><th>米费</th><th>能耗</th><th>毛益率</th><th>可信度</th><th class="l">已关联</th><th>保存时间</th><th></th></tr></thead><tbody>'+
+    [...OWPC].sort((a,b)=>b.at-a.at).map(r=>'<tr'+(r.id===OWP.id?' style="background:var(--accent-soft)"':'')+'><td class="l">'+esc(owpName(r))+'</td>'+
+      '<td class="l">'+esc(r.inp.wellType+' · '+(r.inp.block||'未填区块')+' · '+r.inp.phase+'开')+'</td>'+
+      '<td>'+v(r,'dayfoot',1)+'</td><td>'+v(r,'mifei',4)+'</td><td>'+v(r,'energy',2)+'</td><td>'+(r.res&&r.res.gm_avg!=null?fmt(r.res.gm_avg,2)+'%':'—')+'</td>'+
+      '<td><span class="pill '+(OWP_CONF_CLS[r.conf]||'lo')+'">'+esc(r.conf||'—')+'</span></td>'+
+      '<td class="l">'+(r.links&&r.links.length?r.links.map(x=>esc(x.wellNo)).join('、'):'<span class="dim">—</span>')+'</td>'+
+      '<td>'+stamp(r.at)+'</td><td style="white-space:nowrap"><button class="btn ghost mini" data-owp-open="'+r.id+'" type="button">打开</button> '+
+      '<button class="btn ghost mini" data-owp-del="'+r.id+'" type="button">删除</button></td></tr>').join('')+'</tbody>';
+  T.querySelectorAll('[data-owp-open]').forEach(b=>b.onclick=()=>{ const r=OWPC.find(x=>x.id===b.dataset.owpOpen); if(!r) return;
+    OWP=Object.assign(owpBlank(),clone(r)); OWP.inp=Object.assign(owpBlank().inp,OWP.inp); renderOwp(); window.scrollTo({top:0,behavior:'smooth'}); });
+  T.querySelectorAll('[data-owp-del]').forEach(b=>b.onclick=()=>{ const r=OWPC.find(x=>x.id===b.dataset.owpDel); if(!r) return;
+    if(!confirm('删除测算「'+owpName(r)+'」？已关联到单井的定额不受影响。')) return;
+    OWPC=OWPC.filter(x=>x.id!==r.id); if(OWP.id===r.id) OWP.id=''; saveOwpc(); renderOwp(); owpMsg('已删除测算「'+esc(owpName(r))+'」。'); });
+}
+// 保存：把采用值和可信度一起快照下来，记录表和关联都用这份
+function owpSave(silent){
+  const c=owpCalc();
+  if(!OWP.id) OWP.id='OWP'+Date.now().toString(36)+Math.floor(Math.random()*900+100);
+  OWP.at=Date.now(); OWP.by=(AI_STATUS&&AI_STATUS.user)||'';
+  OWP.res=Object.fromEntries(OWP_ITEMS.map(([k,,,d])=>[k, c.items[k].val!=null&&isFinite(c.items[k].val)?+(+c.items[k].val).toFixed(d):null]));
+  OWP.conf=c.conf;
+  const rec=clone(OWP), i=OWPC.findIndex(x=>x.id===OWP.id);
+  if(i>=0) OWPC[i]=rec; else OWPC.push(rec);
+  saveOwpc(); renderOwp();
+  if(!silent) owpMsg('已保存测算「'+esc(owpName(OWP))+'」。','ok');
+  return rec;
+}
+
+// 手动关联：把采用值写进单井参数录入表的一井一策自定义定额。目标可以是当前表单，或井库里的某口井（调出来编辑）
+function owpLinkDialog(){
+  const c=owpCalc();
+  if(c.items.dayfoot.val==null){ owpMsg('<b>还不能关联：</b>日进尺没有测算值，请补设计井深和策划周期、选参照区块，或手填日进尺采用值。','err'); return; }
+  const mask=el('div','aimask'); mask.id='owpMask';
+  const cur=S.w.wellNo||'未命名井';
+  const wells=[...(WELLS||[])].sort((a,b)=>(b.w.wellNo===OWP.inp.wellNo)-(a.w.wellNo===OWP.inp.wellNo)||(b.at||0)-(a.at||0));
+  mask.innerHTML='<div class="aibox" role="dialog" aria-modal="true" aria-label="关联到单井参数录入表" style="width:min(620px,100%)"><header><div><h3>关联到单井参数录入表</h3>'+
+    '<div class="sub">测算「'+esc(owpName(OWP))+'」· 日进尺 '+fmt(c.items.dayfoot.val,1)+' 米/天 · 可信度 '+c.conf+'</div></div><button class="btn ghost mini" id="owpLX" type="button">关闭</button></header>'+
+    '<div class="body">'+
+      '<label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:10px"><input type="radio" name="owpTo" value="cur" checked style="width:16px;height:16px;margin:2px 0 0">'+
+        '<span>当前单井参数录入表：<b>'+esc(cur)+'</b>'+(EDIT_ID?'（正在编辑井库记录）':'（新建，未入库）')+'</span></label>'+
+      '<label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px"><input type="radio" name="owpTo" value="rec" style="width:16px;height:16px;margin:2px 0 0"'+(wells.length?'':' disabled')+'>'+
+        '<span>井库里的井（调出到录入表编辑）</span></label>'+
+      '<select id="owpLRec" style="margin:0 0 12px 24px;max-width:calc(100% - 24px)"'+(wells.length?'':' disabled')+'>'+
+        (wells.length?wells.map(r=>'<option value="'+r.id+'">'+esc((r.w.wellNo||'未命名')+' · '+r.w.wellType+' '+(r.w.block||'未选区块')+' '+r.w.phase+'开'+(r.status==='approved'?' · 已审核':''))+'</option>').join(''):'<option>井库为空</option>')+'</select>'+
+      '<label class="sub" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="owpLCarry" checked style="width:15px;height:15px;margin:0">同时带入井型、开次、区块、策划周期和设计参数（目标井已填的不覆盖）</label>'+
+      '<div class="note" style="margin-top:12px">关联后录入表自动勾选「一井一策」，9 项自定义定额按采用值填入，仍可在录入表里修改。<b>尚未入库</b>，回到单井考核确认后点「提交入库」或「更新入库」。</div>'+
+    '</div><footer><span class="grow"></span><button class="btn ghost" id="owpLCancel" type="button">取消</button><button class="btn" id="owpLGo" type="button">关联</button></footer></div>';
+  document.body.appendChild(mask);
+  const close=()=>mask.remove();
+  $('#owpLX').onclick=close; $('#owpLCancel').onclick=close;
+  $('#owpLRec').onchange=()=>{ const r=mask.querySelector('input[value=rec]'); if(r&&!r.disabled) r.checked=true; };
+  $('#owpLGo').onclick=()=>{
+    const to=mask.querySelector('input[name=owpTo]:checked').value;
+    const rec=to==='rec'?(WELLS||[]).find(x=>x.id===$('#owpLRec').value):null;
+    if(owpLinkTo(rec,$('#owpLCarry').checked)) close();
+  };
+}
+function owpLinkTo(rec,carry){
+  const target = rec ? rec.w : S.w;
+  const hasCustom=target.custom&&Object.values(target.custom).some(v=>+v);
+  if(hasCustom && !confirm('「'+(target.wellNo||'未命名井')+'」已有一井一策自定义定额，用本测算的采用值覆盖？')) return false;
+  const saved=owpSave(true);   // 关联前先保存，记录里留下关联去向
+  if(rec) loadWell(rec.id,true);
+  const w=S.w, name=owpName(saved), tag='一井一策测算「'+name+'」';
+  w.oneWellOnePolicy=true;
+  w.custom=Object.assign({},w.custom||{});
+  OWP_ITEMS.forEach(([k])=>{ if(saved.res[k]!=null) w.custom[k]=saved.res[k]; });
+  const filled=[];
+  if(carry){
+    const empty=k=>{ const v=w[k]; return v==null||v===''||v===0||(Array.isArray(v)&&!v.length); };
+    ['wellNo','block','planDays',...DESIGN_KEYS].forEach(k=>{ const v=saved.inp[k];
+      if(empty(k) && !(v==null||v===''||v===0||(Array.isArray(v)&&!v.length))){ w[k]=clone(v); setSrc(k,'sys',null,tag); filled.push(k); } });
+    // 井型、开次决定查表口径：表单还是出厂默认值时才跟测算走
+    ['wellType','phase'].forEach(k=>{ if(w[k]!==saved.inp[k] && w[k]===W_DEFAULT[k] && !rec){ w[k]=saved.inp[k]; setSrc(k,'sys',null,tag); filled.push(k); } });
+  }
+  w.owpRef={id:saved.id, name, at:Date.now()};
+  const r=OWPC.find(x=>x.id===saved.id);
+  if(r){ r.links=(r.links||[]).filter(x=>x.wellNo!==(w.wellNo||'未命名井')).concat({wellNo:w.wellNo||'未命名井', at:Date.now()}); OWP.links=clone(r.links); saveOwpc(); }
+  const diff=w.wellType!==saved.inp.wellType||+w.phase!==+saved.inp.phase;
+  go('well'); render();
+  wellMsg('已把'+esc(tag)+'关联到 <b>'+esc(w.wellNo||'未命名井')+'</b>：一井一策 9 项自定义定额已按采用值填入'+
+    (filled.length?'，并带入 '+filled.length+' 项基础 / 设计参数':'')+'。尚未入库，确认后点「'+(EDIT_ID?'更新入库':'提交入库')+'」。'+
+    (diff?'<br><b>注意：</b>测算按「'+esc(saved.inp.wellType+' '+saved.inp.phase+'开')+'」做的，这口井是「'+esc(w.wellType+' '+w.phase+'开')+'」，请确认是不是关联错了井。':''), diff?'':'ok');
+  return true;
+}
+// 单井录入表的「一井一策 · 自定义定额」里：显示定额来自哪条测算，也可以从这里挑一条测算带入
+function owpFormBox(){
+  const box=el('div'); box.style.cssText='margin-top:6px';
+  const ref=S.w.owpRef;
+  box.innerHTML=(ref?'<div class="sub" style="margin-bottom:8px">定额来自<b>一井一策测算「'+esc(ref.name)+'」</b>（'+stamp(ref.at)+' 关联），手改后以录入表为准。</div>':'')+
+    (OWPC.length?'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="owpPick" style="max-width:320px">'+
+      [...OWPC].sort((a,b)=>b.at-a.at).map(r=>'<option value="'+r.id+'"'+(ref&&ref.id===r.id?' selected':'')+'>'+esc(owpName(r)+' · '+(r.inp.block||'未填区块')+' · 日进尺 '+(r.res&&r.res.dayfoot!=null?fmt(r.res.dayfoot,1):'—'))+'</option>').join('')+
+      '</select><button class="btn ghost mini" id="owpPickGo" type="button">从一井一策测算带入</button><button class="btn ghost mini" id="owpPickOpen" type="button">打开测算</button></div>'
+      :'<div class="sub">还没有一井一策测算。可以到左侧「一井一策」按设计书测算后关联过来。</div>');
+  const pick=()=>{ const r=OWPC.find(x=>x.id===$('#owpPick').value); if(r){ OWP=Object.assign(owpBlank(),clone(r)); OWP.inp=Object.assign(owpBlank().inp,OWP.inp); } return r; };
+  const go1=box.querySelector('#owpPickGo'); if(go1) go1.onclick=()=>{ if(pick()) owpLinkTo(null,true); };
+  const op=box.querySelector('#owpPickOpen'); if(op) op.onclick=()=>{ if(pick()) go('owp'); };
+  return box;
+}
+$('#owpNew').onclick=()=>{ OWP=owpBlank(); renderOwp(); owpMsg(''); };
+$('#owpSave').onclick=()=>owpSave(false);
+$('#owpAi').onclick=()=>openAiImport(AI_OWP_TARGET);
+const AI_OWP_TARGET={
+  title:'AI 导入设计书（一井一策测算）',
+  fields:()=>Object.fromEntries(OWP_F.flat().map(f=>[f.k,f])),
+  w:()=>OWP.inp, def:()=>owpBlank().inp,
+  only:['wellNo','wellType','phase','block','planDays',...DESIGN_KEYS],   // 只问测算要用的字段，省 token
+  preMiss:k=>k==='planDays'||DESIGN_KEYS.includes(k),
+  setProv:(k,src,conf,ev,file)=>{ OWP.prov[k]={src,conf,evidence:ev,file}; },
+  done:(nDocs,n,nEdited,tail)=>{ renderOwp();
+    owpMsg('已从 '+nDocs+' 份资料回填 <b>'+n+'</b> 项测算参数'+(nEdited?'（其中 '+nEdited+' 项核对时改过值）':'')+'，测算结果已按新参数更新。确认后点「保存测算」。'+(tail?'<br>'+tail:''),'ok'); }
+};
+
 /* ============================ AI 解析导入 ============================
    单井资料（Word / PDF / Excel）→ 服务器抽文本 → 大模型或本地词典解析 → 逐项核对 → 回填录入表。
    只回填用户勾选的字段：与表单已录入值不同的、置信度低于 50% 的默认不勾，避免把核实过的数据悄悄冲掉。
@@ -4693,25 +5052,39 @@ async function loadAiStatus(){
   const nav=$('#navAiRules'); if(nav) nav.hidden=!(AI_STATUS&&AI_STATUS.admin);
   renderWellActions();
 }
-function aiFieldMap(){ const m={}; F.forEach(g=>g.rows.forEach(r=>r.forEach(f=>{ m[f.k]=f; }))); return m; }
+/* 导入目标：默认回填单井参数录入表；一井一策测算页传自己的目标——只问测算要用的字段（省 token），回填到测算参数 */
+const AI_WELL_TARGET={
+  title:'AI 解析导入单井资料',
+  fields:()=>{ const m={}; F.forEach(g=>g.rows.forEach(r=>r.forEach(f=>{ m[f.k]=f; }))); return m; },
+  w:()=>S.w, def:()=>W_DEFAULT, only:null,
+  preMiss:k=>S.w.oneWellOnePolicy&&DESIGN_KEYS.includes(k),
+  setProv:setSrc,
+  done:(nDocs,n,nEdited,tail)=>{ render();
+    wellMsg('已从 '+nDocs+' 份资料回填 <b>'+n+'</b> 项'+(nEdited?'（其中 '+nEdited+' 项核对时改过值，记为人工录入）':'')+
+      '。绿色「AI解析」标签旁是置信度，输入框下方是来源文件与原文依据。尚未入库，确认后点「提交入库」。'+(tail?'<br>'+tail:''),'ok'); }
+};
+function aiFieldMap(){ return ((AIM&&AIM.t)||AI_WELL_TARGET).fields(); }
 const aiN=v=>Number(v).toLocaleString('zh-CN',{maximumFractionDigits:4});
 function aiShow(f,v){
+  if(f.t==='sections') return secText(v);
   if(f.t==='chk') return v?'是':'否';
   if(v===''||v==null) return '—';
   return f.t==='num' ? aiN(v) : String(v);
 }
-function aiSame(f,a,b){ return f.t==='num' ? (+a||0)===(+b||0) : f.t==='chk' ? !!a===!!b : String(a==null?'':a)===String(b==null?'':b); }
+function aiSame(f,a,b){ if(f.t==='sections') return JSON.stringify(a||[])===JSON.stringify(b||[]);
+  return f.t==='num' ? (+a||0)===(+b||0) : f.t==='chk' ? !!a===!!b : String(a==null?'':a)===String(b==null?'':b); }
 // 表单这一项还没真正录入过：等于出厂默认值，或为空/0
-function aiBlank(f,k){ const v=S.w[k]; return aiSame(f,v,W_DEFAULT[k]) || v===''||v==null || (f.t==='num'&&!(+v)); }
+function aiBlank(f,k){ const v=AIM.t.w()[k]; return aiSame(f,v,AIM.t.def()[k]) || v===''||v==null || (f.t==='num'&&!(+v)); }
 function aiConfPill(c){ const p=Math.round((+c||0)*100); return '<span class="pill '+(c>=0.8?'hi':c>=0.5?'mid':'lo')+'">'+p+'%</span>'; }
 async function aiErr(r){ if(r.status===401) return '登录已过期，请刷新页面重新登录'; try{ const j=await r.json(); return j.error||('HTTP '+r.status); }catch(e){ return 'HTTP '+r.status; } }
 
 let AIM=null;   // 导入对话框状态：{docs, mode, result, rows, step}
-function openAiImport(){
+function openAiImport(target){
   if(!AI_STATUS) return;
-  AIM={docs:[], mode:AI_STATUS.ai?'ai':'local', result:null, rows:[], step:1, busy:false};
+  const t=target||AI_WELL_TARGET;
+  AIM={docs:[], mode:AI_STATUS.ai?'ai':'local', result:null, rows:[], step:1, busy:false, t};
   const mask=el('div','aimask'); mask.id='aiMask';
-  mask.innerHTML='<div class="aibox" role="dialog" aria-modal="true" aria-label="AI 解析导入单井资料"><header><div><h3>AI 解析导入单井资料</h3>'+
+  mask.innerHTML='<div class="aibox" role="dialog" aria-modal="true" aria-label="'+esc(t.title)+'"><header><div><h3>'+esc(t.title)+'</h3>'+
     '<div class="sub" id="aimSub"></div></div><button class="btn ghost mini" id="aimX" type="button">关闭</button></header>'+
     '<div class="body" id="aimBody"></div><footer id="aimFoot"></footer></div>';
   document.body.appendChild(mask);
@@ -4796,7 +5169,7 @@ async function aimParse(){
   const go=$('#aimGo'); go.textContent=AIM.mode==='ai'?'大模型解析中，约需 10–60 秒…':'解析中…';
   aimMsg('');
   try{
-    const r=await apiFetch('/api/ai/parse',{method:'POST',body:JSON.stringify({mode:AIM.mode,docs})});
+    const r=await apiFetch('/api/ai/parse',{method:'POST',body:JSON.stringify({mode:AIM.mode,docs,only:AIM.t.only})});
     if(!AIM) return;
     if(!r.ok){ aimMsg('<b>解析失败：</b>'+esc(await aiErr(r))+(AIM.mode==='ai'?'。可改用「本地词典」再试。':''),'err'); return; }
     AIM.result=await r.json();
@@ -4809,7 +5182,7 @@ function aimStep2(){
   AIM.step=2;
   const R=AIM.result, FM=aiFieldMap();
   AIM.rows=Object.keys(FM).filter(k=>R.fields[k]).map(k=>{
-    const f=FM[k], x=R.fields[k], blank=aiBlank(f,k), same=aiSame(f,S.w[k],x.value);
+    const f=FM[k], x=R.fields[k], blank=aiBlank(f,k), same=aiSame(f,AIM.t.w()[k],x.value);
     return {k, f, orig:x.value, val:x.value, conf:x.conf, evidence:x.evidence, file:x.file, flags:x.flags||[],
       same, conflict:!blank&&!same, on: x.conf>=0.5 && (blank||same)};
   });
@@ -4819,9 +5192,11 @@ function aimStep2(){
     '<div class="note '+(n?'ok':'err')+'">'+(n?'从 '+AIM.docs.filter(d=>d.status==='ok'&&d.chars>0).length+' 份资料解析出 <b>'+n+'</b> 个字段':'<b>没有解析出任何字段。</b>可以换一份资料，或请管理员在「解析规则」里补充字段叫法')+
       '<span class="sub">（'+esc(R.model)+' · '+(R.ms/1000).toFixed(1)+' 秒）</span>。'+
       (n?'可以直接改「解析值」；<b>与表单已录入值不同的（黄底）和置信度低于 50% 的默认不勾选</b>，确认无误再勾上。':'')+'</div>'+
+    aimStatsNote(R)+
     ((R.notes||[]).length?'<div class="note" style="margin-top:8px"><b>解析说明：</b>'+R.notes.map(esc).join('；')+'</div>':'')+
     (n?'<div class="scroll" style="margin-top:12px"><table class="aitbl"><thead><tr><th class="c"><input type="checkbox" id="aimAll" aria-label="全选"></th>'+
-      '<th class="l">字段</th><th class="l">表单当前值</th><th class="l">解析值</th><th class="c">置信度</th><th class="l">来源文件 · 原文依据</th></tr></thead><tbody id="aimRows"></tbody></table></div>':'');
+      '<th class="l">字段</th><th class="l">表单当前值</th><th class="l">解析值</th><th class="c">置信度</th><th class="l">来源文件 · 原文依据</th></tr></thead><tbody id="aimRows"></tbody></table></div>':'')+
+    aimMissingBox(R);
   $('#aimFoot').innerHTML=
     '<label class="sub" id="aimExWrap" style="display:none;align-items:center;gap:6px"><input type="checkbox" id="aimEx" checked style="width:15px;height:15px;margin:0">'+
       '把改过的值存为纠正示例'+(AI_STATUS.admin?'（后续解析参考）':'（管理员审核后用于后续解析）')+'</label>'+
@@ -4830,11 +5205,58 @@ function aimStep2(){
   $('#aimBack').onclick=aimStep1;
   $('#aimCancel').onclick=closeAiImport;
   $('#aimApply').onclick=aimApply;
+  aimMissingBind();
   if(n){ $('#aimAll').onchange=e=>{ AIM.rows.forEach(r=>r.on=e.target.checked); aimRows(); }; aimRows(); }
   aimFootState();
 }
+// 这次解析花了多少：本地词典定下几项、问了大模型几项、发了多少字、多少 token
+function aimStatsNote(R){
+  const s=R.stats, u=R.usage; if(!s) return '';
+  const parts = s.scope==='full' ? ['扩大范围：问大模型 '+s.asked+' 项，发送全文 '+s.sentChars+' 字']
+    : ['本地词典直接定下 '+s.local+' 项','问大模型 '+s.asked+' 项'+(s.asked?'（发送 '+s.snippets+' 段片段、共 '+s.sentChars+' 字）':'（未调用大模型）')];
+  if(R.cached) parts.push('同一批资料已解析过，直接复用结果，未消耗 token');
+  else if(u) parts.push('token：输入 '+u.input+(u.cacheHit?'（其中缓存命中 '+u.cacheHit+'）':'')+' · 输出 '+u.output);
+  return '<div class="sub" style="margin-top:8px">'+parts.map(esc).join(' · ')+'</div>';
+}
+// 片段里没找到的字段：勾选后「扩大范围重试」只问这几项、把整份资料发给大模型
+function aimMissingBox(R){
+  const FM=aiFieldMap(), miss=(R.missing||[]).filter(k=>FM[k]&&!R.fields[k]);
+  if(!miss.length||AIM.mode!=='ai') return '';
+  const pre=AIM.t.preMiss;
+  return '<details class="note" style="margin-top:8px" id="aimMiss"'+(miss.some(pre)?' open':'')+'><summary><b>'+miss.length+'</b> 个字段在资料片段里没找到</summary>'+
+    '<div class="sub" style="margin:6px 0">多数是资料里本来就没有（如设计书没有成本数据）。确认资料里有、但没解析出来的，勾选后「扩大范围重试」：只问勾选的字段，把整份资料发给大模型，token 消耗会明显增加。</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+miss.map(k=>'<label class="sub" style="display:inline-flex;align-items:center;gap:5px"><input type="checkbox" data-miss="'+esc(k)+'"'+(pre(k)?' checked':'')+' style="width:14px;height:14px;margin:0">'+esc(FM[k].l)+'</label>').join('')+'</div>'+
+    '<button class="btn ghost mini" id="aimWiden" type="button" style="margin-top:8px">扩大范围重试</button><span class="sub" id="aimWidenMsg" style="margin-left:8px"></span></details>';
+}
+function aimMissingBind(){
+  const b=$('#aimWiden'); if(!b) return;
+  b.onclick=async()=>{
+    const only=[...document.querySelectorAll('[data-miss]')].filter(c=>c.checked).map(c=>c.dataset.miss);
+    const msg=$('#aimWidenMsg');
+    if(!only.length){ msg.textContent='先勾选要重试的字段'; return; }
+    const docs=AIM.docs.filter(d=>d.status==='ok'&&d.chars>0).map(d=>({name:d.name,text:d.text}));
+    b.disabled=true; msg.textContent='大模型解析中…';
+    try{
+      const r=await apiFetch('/api/ai/parse',{method:'POST',body:JSON.stringify({mode:'ai',docs,scope:'full',only})});
+      if(!AIM) return;
+      if(!r.ok){ msg.textContent='重试失败：'+(await aiErr(r)); b.disabled=false; return; }
+      const W=await r.json(), got=Object.keys(W.fields);
+      // 合并进本次结果：新找到的字段补进去，仍没找到的留在清单里
+      const R=AIM.result;
+      Object.assign(R.fields,W.fields);
+      R.missing=(R.missing||[]).filter(k=>!W.fields[k]);
+      R.notes=(R.notes||[]).concat(W.notes||[]);
+      R.widen={asked:only.length, got:got.length, usage:W.usage, sentChars:W.stats&&W.stats.sentChars};
+      aimStep2();
+      aimMsg('');
+      const n=$('#aimBody'); if(n) n.insertAdjacentHTML('afterbegin','<div class="note '+(got.length?'ok':'')+'" style="margin-bottom:8px">扩大范围重试：问了 '+only.length+' 项，新找到 <b>'+got.length+'</b> 项'+
+        (W.usage?'（token 输入 '+W.usage.input+' · 输出 '+W.usage.output+'）':'')+'。</div>');
+    }catch(e){ if(AIM){ msg.textContent='重试失败：网络中断或服务器无响应'; b.disabled=false; } }
+  };
+}
 function aimEditor(r,i){
   const f=r.f, v=r.val;
+  if(f.t==='sections') return '<span class="sub" style="white-space:normal">'+esc(secText(v))+'</span><div class="sub">回填后可在录入表里逐格修改</div>';
   if(f.t==='chk') return '<select data-v="'+i+'"><option value="1"'+(v?' selected':'')+'>是</option><option value="0"'+(v?'':' selected')+'>否</option></select>';
   if(f.t==='select'){
     const opts=(f.optFn?f.optFn():f.opt)||[], all=opts.some(o=>String(o)===String(v))?opts:[v,...opts];
@@ -4846,9 +5268,10 @@ function aimRows(){
   const tb=$('#aimRows'); if(!tb) return;
   tb.innerHTML=AIM.rows.map((r,i)=>{
     const edited=!aiSame(r.f,r.val,r.orig);
-    const tags=[r.same?'与表单一致':'', r.conflict?'将覆盖表单已录入的「'+aiShow(r.f,S.w[r.k])+'」':'', edited?'已改，原解析值「'+aiShow(r.f,r.orig)+'」':''].concat(r.flags).filter(Boolean);
+    const cur=AIM.t.w()[r.k];
+    const tags=[r.same?'与表单一致':'', r.conflict?'将覆盖表单已录入的「'+aiShow(r.f,cur)+'」':'', edited?'已改，原解析值「'+aiShow(r.f,r.orig)+'」':''].concat(r.flags).filter(Boolean);
     return '<tr class="'+(r.conflict?'conflict ':'')+(r.on?'':'skip')+'"><td class="c"><input type="checkbox" data-on="'+i+'"'+(r.on?' checked':'')+' aria-label="回填'+esc(r.f.l)+'"></td>'+
-      '<td class="l">'+esc(r.f.l)+'</td><td class="l">'+esc(aiShow(r.f,S.w[r.k]))+'</td>'+
+      '<td class="l">'+esc(r.f.l)+'</td><td class="l">'+esc(aiShow(r.f,cur))+'</td>'+
       '<td class="l val">'+aimEditor(r,i)+'</td><td class="c">'+aiConfPill(r.conf)+'</td>'+
       '<td class="ev"><b>'+esc(r.file||'—')+'</b>'+(r.evidence?' · '+esc(r.evidence):'')+tags.map(t=>'<span class="flag">'+esc(t)+'</span>').join('')+'</td></tr>';
   }).join('');
@@ -4868,26 +5291,25 @@ function aimFootState(){
 async function aimApply(){
   const pick=AIM.rows.filter(r=>r.on); if(!pick.length) return;
   const edited=pick.filter(r=>!aiSame(r.f,r.val,r.orig));
+  const t=AIM.t, w=t.w();
   pick.forEach(r=>{
-    S.w[r.k]=r.val;
-    if(aiSame(r.f,r.val,r.orig)) setSrc(r.k,'ai',r.conf,r.evidence,r.file);
-    else setSrc(r.k,'man',null,'AI 解析为「'+aiShow(r.f,r.orig)+'」，核对时改为「'+aiShow(r.f,r.val)+'」'+(r.evidence?'；依据：'+r.evidence:''),r.file);
+    w[r.k]=r.val;
+    if(aiSame(r.f,r.val,r.orig)) t.setProv(r.k,'ai',r.conf,r.evidence,r.file);
+    else t.setProv(r.k,'man',null,'AI 解析为「'+aiShow(r.f,r.orig)+'」，核对时改为「'+aiShow(r.f,r.val)+'」'+(r.evidence?'；依据：'+r.evidence:''),r.file);
   });
   const saveEx=edited.length && $('#aimEx') && $('#aimEx').checked;
   const nDocs=AIM.docs.filter(d=>d.status==='ok'&&d.chars>0).length;
   closeAiImport();
-  render();
   let tail='';
   if(saveEx){
     try{
-      const r=await apiFetch('/api/ai/examples',{method:'POST',body:JSON.stringify({wellNo:S.w.wellNo,
+      const r=await apiFetch('/api/ai/examples',{method:'POST',body:JSON.stringify({wellNo:w.wellNo,
         items:edited.map(x=>({k:x.k,value:x.val,wrong:aiShow(x.f,x.orig),evidence:x.evidence}))})});
       tail = r.ok ? (AI_STATUS.admin?'改过的 '+edited.length+' 项已存为纠正示例，后续解析会参考。':'改过的 '+edited.length+' 项已提交为纠正示例，管理员审核后生效。')
                   : '纠正示例保存失败：'+esc(await aiErr(r));
     }catch(e){ tail='纠正示例保存失败：网络中断'; }
   }
-  wellMsg('已从 '+nDocs+' 份资料回填 <b>'+pick.length+'</b> 项'+(edited.length?'（其中 '+edited.length+' 项核对时改过值，记为人工录入）':'')+
-    '。绿色「AI解析」标签旁是置信度，输入框下方是来源文件与原文依据。尚未入库，确认后点「提交入库」。'+(tail?'<br>'+tail:''),'ok');
+  t.done(nDocs,pick.length,edited.length,tail);
 }
 
 /* ============================ 解析规则（AI 解析导入的调教台，仅管理员） ============================
@@ -4896,7 +5318,7 @@ async function aimApply(){
 let AIR=null, AIR_TAB='fields', AIR_DIRTY=false;
 const AIR_TABS=[['fields','字段词典'],['terms','术语专名'],['rules','理解规则'],['examples','纠正示例'],['try','试解析']];
 const AIR_KINDS=['区块','井型','队号','井号','缩写','其他'];
-const AIR_TYPE={num:'数值',text:'文本',bool:'是/否',enum:'枚举'};
+const AIR_TYPE={num:'数值',text:'文本',bool:'是/否',enum:'枚举',table:'表格（每开一行）'};
 function airMsg(html,cls){ const m=$('#airMsg'); if(!m) return;
   m.innerHTML=html?'<div class="note '+(cls||'')+'" style="margin-bottom:12px">'+html+'</div>':'';
   msgAutoHide(m,()=>airMsg('')); }
@@ -5168,15 +5590,15 @@ async function hydrateFromBackend(){
   const ok=await ensureBackendAuth();
   // 首次进来连不上后端是设计内的单机回退，不报警；已经进过后端模式再连不上才是异常
   if(!ok){ if(BACKEND_MODE) syncFail('hydrate','服务器连接','无响应，界面正显示本机缓存',rehydrate); return; }
-  const LABELS=['井库','定额库配置','本年月度填报','上年月度填报','预兑现台账','队伍信息台账','班子绩效手动项'];
+  const LABELS=['井库','定额库配置','本年月度填报','上年月度填报','预兑现台账','队伍信息台账','班子绩效手动项','一井一策测算'];
   let rs;
   try{
-    rs=await Promise.all([apiFetch('/api/wells'),apiFetch('/api/quota'),apiFetch('/api/filings/'+YEAR),apiFetch('/api/filings/'+(YEAR-1)),apiFetch('/api/pre'),apiFetch('/api/teaminfo'),apiFetch('/api/perf')]);
+    rs=await Promise.all([apiFetch('/api/wells'),apiFetch('/api/quota'),apiFetch('/api/filings/'+YEAR),apiFetch('/api/filings/'+(YEAR-1)),apiFetch('/api/pre'),apiFetch('/api/teaminfo'),apiFetch('/api/perf'),apiFetch('/api/owpcalc')]);
   }catch(e){
     console.warn('[后端] 拉取初始数据失败，使用本地缓存：', e);
     syncFail('hydrate','初始数据','网络中断，界面正显示本机缓存',rehydrate); return;
   }
-  const [wr,qr,fr,fpr,pr,tr,pf]=rs;
+  const [wr,qr,fr,fpr,pr,tr,pf,oc]=rs;
   /* 过去这里只有 if(xr.ok)：服务器返回 401 时会不声不响地沿用本机缓存，界面上的
      配置与服务器不一致却没有任何提示。现在把读不到的项一并报出来。 */
   const bad=rs.map((r,i)=>r.ok?null:LABELS[i]+'（HTTP '+r.status+'）').filter(Boolean);
@@ -5192,6 +5614,7 @@ async function hydrateFromBackend(){
     if(pr.ok){ const pp=await pr.json(); if(Array.isArray(pp)) PRES=pp; }   // null 表示服务器尚无台账，交给 migratePre 建账
     if(tr.ok){ const tt=await tr.json(); if(Array.isArray(tt)) TINFO=tt; }  // null 表示服务器尚无队伍台账，交给 boot 初始化名单
     if(pf.ok){ const pp=await pf.json(); if(Array.isArray(pp)) PERF=pp; }    // 班子绩效手动录入项
+    if(oc.ok){ const oo=await oc.json(); if(Array.isArray(oo)) OWPC=oo; }     // 一井一策测算记录（null = 服务器还没有，沿用本机缓存）
   }catch(e){
     console.warn('[后端] 解析初始数据失败，使用本地缓存：', e);
     syncFail('hydrate','初始数据','返回内容无法解析，界面正显示本机缓存',rehydrate);

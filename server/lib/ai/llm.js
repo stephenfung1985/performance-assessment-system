@@ -67,24 +67,36 @@ async function post(url, headers, body, c) {
   try { return JSON.parse(text); } catch (_) { throw Object.assign(new Error('大模型接口返回的不是 JSON'), { status: 502 }); }
 }
 
-// system / user 两段提示词 → 解析好的 JSON 对象
-async function chatJSON(system, user) {
+// 统一成 {input, output, cacheHit}：DeepSeek 报 prompt_cache_hit_tokens，Claude 报 cache_read_input_tokens
+function usageOf(u) {
+  if (!u) return null;
+  return {
+    input: (u.prompt_tokens != null ? u.prompt_tokens : (u.input_tokens || 0) + (u.cache_read_input_tokens || 0)) || 0,
+    output: (u.completion_tokens != null ? u.completion_tokens : u.output_tokens) || 0,
+    cacheHit: (u.prompt_cache_hit_tokens != null ? u.prompt_cache_hit_tokens : u.cache_read_input_tokens) || 0
+  };
+}
+const truncated = () => Object.assign(new Error('大模型输出被截断，请调大 AI_MAX_TOKENS'), { status: 502, truncated: true });
+
+// system / user 两段提示词 → 解析好的 JSON 对象。opts.maxTokens 按本次要问的字段数给，不超过 AI_MAX_TOKENS
+async function chatJSON(system, user, opts) {
   const c = config();
   if (!enabled(c)) throw Object.assign(new Error('AI 解析未启用：请在 server/.env 配置 AI_PROVIDER / AI_MODEL / AI_API_KEY'), { status: 503 });
+  const maxTokens = Math.min(c.maxTokens, (opts && opts.maxTokens) || c.maxTokens);
   if (c.provider === 'anthropic') {
     const j = await post(c.baseUrl + '/v1/messages',
       { 'x-api-key': c.apiKey, 'anthropic-version': '2023-06-01' },
-      { model: c.model, max_tokens: c.maxTokens, temperature: 0, system, messages: [{ role: 'user', content: user }] }, c);
+      { model: c.model, max_tokens: maxTokens, temperature: 0, system, messages: [{ role: 'user', content: user }] }, c);
     const out = (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-    if (j.stop_reason === 'max_tokens') throw Object.assign(new Error('大模型输出被截断，请调大 AI_MAX_TOKENS'), { status: 502 });
-    return { data: parseJSON(out), usage: j.usage || null };
+    if (j.stop_reason === 'max_tokens') throw truncated();
+    return { data: parseJSON(out), usage: usageOf(j.usage) };
   }
-  const body = { model: c.model, temperature: 0, max_tokens: c.maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
+  const body = { model: c.model, temperature: 0, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
   if (c.jsonMode) body.response_format = { type: 'json_object' };
   const j = await post(c.baseUrl + '/chat/completions', c.apiKey ? { authorization: 'Bearer ' + c.apiKey } : {}, body, c);
   const ch = (j.choices || [])[0] || {};
-  if (ch.finish_reason === 'length') throw Object.assign(new Error('大模型输出被截断，请调大 AI_MAX_TOKENS'), { status: 502 });
-  return { data: parseJSON(ch.message && ch.message.content), usage: j.usage || null };
+  if (ch.finish_reason === 'length') throw truncated();
+  return { data: parseJSON(ch.message && ch.message.content), usage: usageOf(j.usage) };
 }
 
 module.exports = { config, enabled, chatJSON };
