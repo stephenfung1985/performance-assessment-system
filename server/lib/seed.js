@@ -1,5 +1,6 @@
 // 首次启动时把附件1（2026年8月版）定额基线写入存储，井库留空由团队自己录入。
 // 已经有数据的 key 不会被覆盖——这个脚本可以安全地反复跑。
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });   // 单独 npm run seed 时也要读到 DATA_DIR
 const store = require('./store');
 const auth = require('./auth');
 

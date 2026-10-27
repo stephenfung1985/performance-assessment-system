@@ -6,8 +6,9 @@
 //   2. 简单账号登录，保护这些数据不被匿名访问
 //   3. 顺带把前端页面（public/index.html）托管出去，一个进程就是一整套系统
 // ============================================================
-require('dotenv').config();
 const path = require('path');
+// 按文件位置找 .env，不依赖启动时所在目录——否则从仓库根目录启动会读不到 DATA_DIR，悄悄落回 server/data
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cookie = require('cookie');
 
@@ -98,9 +99,10 @@ app.put('/api/quota', auth.requireAuth, (req, res) => {
 });
 
 // ================= 数据备份与恢复 =================
-// 快照 = data/ 下全部业务 JSON 打成一个文件，存 server/backups/。账号文件 users 不参与（恢复不改账号，避免把自己锁在门外）。
+// 快照 = data/ 下全部业务 JSON 打成一个文件，存在数据目录旁边的 backups/（默认 server/backups/，
+// 设了 DATA_DIR 就跟着数据一起搬出代码目录）。账号文件 users 不参与（恢复不改账号，避免把自己锁在门外）。
 const fs = require('fs');
-const BACKUP_DIR = path.join(__dirname, 'backups');
+const BACKUP_DIR = path.join(path.dirname(store.DATA_DIR), 'backups');
 const BACKUP_SKIP = new Set(['users']);
 const BACKUP_NAME = /^backup-\d{8}-\d{6}(?:-\d+)?\.json$/;
 function pad2(n) { return String(n).padStart(2, '0'); }

@@ -2,7 +2,7 @@
 //   npm run passwd            # 默认改 admin
 //   npm run passwd -- 用户名
 // 输入时每个字符显示为 *，输两遍确认；直接改 data/users.json，服务不用重启。
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });   // 要读到 DATA_DIR，才改得到线上那份 users.json
 const auth = require('./auth');
 
 const MIN_LEN = 8;
