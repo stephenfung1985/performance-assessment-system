@@ -349,7 +349,17 @@ main.full{padding-bottom:26px}
   .app.nav-hidden .rail{display:none;transform:none}
   .brand,.railfoot{display:none}
   .menubtn{top:13px}
-  .phead{padding-right:0;margin-top:-18px;padding-top:18px}
+  /* 顶部横排导航条吸顶（左右两个固定图标按钮正好落在它上面）；页面短时网格行不再被 100vh 撑高 */
+  .app{align-content:start}
+  .rail{position:sticky;top:0;z-index:35;scrollbar-width:none}
+  .rail::-webkit-scrollbar{display:none}
+  /* 标题栏不再吸顶：手机上一屏太矮，且会钻到固定图标按钮底下 */
+  .phead{position:static;padding-right:0;margin-top:0;padding-top:0}
+  .app.nav-hidden .phead{padding-right:38px}
+  /* iOS 输入框字号小于 16px 时聚焦会自动放大页面；表格单元格里的输入框保持紧凑 */
+  :is(input:not([type=checkbox]):not([type=radio]),select,textarea):not(td *){font-size:16px}
+  #loginGate .fld input{padding:11px 12px}
+  #loginSubmit{padding:11px 15px;font-size:15px}
   .phead h2{font-size:23px}
   .phead>div{flex-wrap:wrap;max-width:100%;min-width:0}
   .seg{max-width:100%;overflow-x:auto}
@@ -361,6 +371,18 @@ main.full{padding-bottom:26px}
   main{padding:18px 15px 64px}
   .f2,.f3{grid-template-columns:1fr}
   .kpis{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+}
+@media (max-width:560px){
+  .btn{padding:8px 15px}
+  .btn.mini{padding:4px 10px}
+  /* 单井考核栏吸顶时别占半屏：操作按钮改横排 */
+  #wellActions{flex:1 1 100%;flex-direction:row;flex-wrap:wrap;min-width:0}
+  #wellActions .btn{width:auto;flex:1 1 auto}
+  .foldhead{padding:13px 14px;gap:10px}
+  .foldhead>.sub:last-child{white-space:nowrap}
+  /* 弹窗里的选项分段条：选项都要看得见，按钮内允许折行而不是横向滚走 */
+  .aibox .seg{display:flex}
+  .aibox .seg button{flex:1 1 0;white-space:normal}
 }
 /* ---------- AI 解析导入 / 解析规则 ---------- */
 .provev{font-size:10.5px;color:var(--muted);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help}
@@ -4512,7 +4534,15 @@ async function exportDashPdf(){
 $('#dashPdf').onclick=exportDashPdf;
 
 /* ============================ 路由与启动 ============================ */
-function syncPhH(){ const ph=document.querySelector('#p-well .phead'); if(ph&&ph.offsetHeight) document.documentElement.style.setProperty('--phH',(ph.offsetHeight-1)+'px'); }
+function syncPhH(){
+  const ph=document.querySelector('#p-well .phead'), rail=document.querySelector('.rail');
+  if(!ph||!ph.offsetHeight) return;
+  const stuck=n=>n.offsetHeight&&getComputedStyle(n).position==='sticky';
+  // 手机宽度下标题栏不吸顶，改吸附在顶部横排导航条下方；导航条隐藏时让出左上角菜单按钮
+  const nb=document.getElementById('navBtn');
+  const h=stuck(ph)?ph.offsetHeight-1:stuck(rail)?rail.offsetHeight:nb.offsetTop+nb.offsetHeight+8;
+  document.documentElement.style.setProperty('--phH',h+'px');
+}
 window.addEventListener('resize',syncPhH);
 function go(id){
   // 定额库已并入「滚动定额」顶部折叠条：旧入口跳过去并展开
@@ -4529,6 +4559,9 @@ function go(id){
   if(id==='owp') renderOwp();
   if(id==='well') requestAnimationFrame(syncPhH);
   window.scrollTo({top:0,behavior:'instant'});
+  // 窄屏导航条横排可横向滚动：把当前页按钮滚到可见处
+  const cur=document.querySelector('.navbtn[aria-current="true"]'), rail=cur&&cur.parentElement;
+  if(rail&&rail.scrollWidth>rail.clientWidth) rail.scrollTo({left:cur.offsetLeft-(rail.clientWidth-cur.offsetWidth)/2,behavior:'smooth'});
 }
 document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>go(b.dataset.go));
 
@@ -4655,6 +4688,7 @@ function setNav(hidden){
   b.setAttribute('aria-label',lbl); b.title=lbl;
   b.setAttribute('aria-expanded', !hidden);
   try{ localStorage.setItem('kh-nav', hidden?'hidden':'shown'); }catch(e){}
+  syncPhH();
 }
 (function(){
   let saved=null; try{ saved=localStorage.getItem('kh-nav'); }catch(e){}
