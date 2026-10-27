@@ -42,7 +42,20 @@ if [ ! -d node_modules ]; then
     exit 1
   }
 fi
-nohup node server.js >>"$LOG_DIR/server.log" 2>&1 &
+# 装了开机自启（安装开机自启.command）就交给 launchd 启动，这样崩溃后仍会自动拉起；没装才直接后台运行
+LABEL="com.kaohe.server"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+DOMAIN="gui/$(id -u)"
+if [ -f "$PLIST" ]; then
+  echo "通过开机自启服务（launchd）启动..."
+  if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+    launchctl kickstart "$DOMAIN/$LABEL"          # 已加载：没在跑就拉起
+  else
+    launchctl bootstrap "$DOMAIN" "$PLIST"        # 被「停止」卸载过：重新加载，RunAtLoad 会立即启动
+  fi
+else
+  nohup node server.js >>"$LOG_DIR/server.log" 2>&1 &
+fi
 
 # ---- 3. 等待就绪（最多 15 秒），然后打开浏览器 ----
 OK=0

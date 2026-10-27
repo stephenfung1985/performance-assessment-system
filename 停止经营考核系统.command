@@ -17,13 +17,30 @@ if [ -f "$DIR/.env" ]; then
 fi
 
 echo "正在停止端口 $PORT 上的经营考核系统服务..."
+# 由开机自启（launchd）托管时，直接杀进程会被立刻拉起，要先把它从 launchd 卸下。
+# 自启配置保留：下次登录本机、或双击「启动经营考核系统.command」时恢复。
+LABEL="com.kaohe.server"
+DOMAIN="gui/$(id -u)"
+MANAGED=0
+if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+  launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1
+  MANAGED=1
+  sleep 1
+fi
+FOUND=$MANAGED
 PIDS="$(lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null)"
 if [ -n "$PIDS" ]; then
+  FOUND=1
   echo "$PIDS" | xargs kill 2>/dev/null
   sleep 2
   PIDS="$(lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null)"
   [ -n "$PIDS" ] && echo "$PIDS" | xargs kill -9 2>/dev/null
+fi
+if [ -n "$(lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null)" ]; then
+  echo "停止失败：端口 $PORT 仍被占用，请在「活动监视器」里查看。"
+elif [ "$FOUND" = 1 ]; then
   echo "已停止。数据已全部保存在本地 server/data 目录，不会丢失。"
+  [ "$MANAGED" = 1 ] && echo "开机自启设置仍保留：下次登录本机，或双击「启动经营考核系统.command」时会恢复运行。"
 else
   echo "没有发现运行中的服务（可能本来就没启动）。"
 fi
