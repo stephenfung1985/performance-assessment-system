@@ -93,6 +93,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* 顶部当前账号 + 退出登录：只在后端模式显示，和左上角菜单按钮同一行（左侧让出按钮位置） */
 .railuser{display:flex;align-items:center;gap:8px;min-height:31px;margin:22px 12px 0 54px}
 .railuser[hidden]{display:none}
+.railuser .srvdot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--muted);cursor:help;transition:background .18s ease}
+.railuser .srvdot[data-state="on"]{background:var(--pos);box-shadow:0 0 0 3px var(--pos-soft)}
+.railuser .srvdot[data-state="off"]{background:var(--neg);box-shadow:0 0 0 3px var(--neg-soft)}
 .railuser .who{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11.5px;font-weight:590}
 .logoutbtn{flex:0 0 auto;background:var(--fill);color:var(--neg);border:0;border-radius:var(--r-sm);padding:5px 10px;
   font-size:12px;font-weight:590;cursor:pointer;transition:background .18s ease}
@@ -430,6 +433,7 @@ main.full{padding-bottom:26px}
 <div class="app" id="app">
 <nav class="rail">
   <div class="railuser" id="railUser" hidden>
+    <span class="srvdot" id="srvDot" role="status" aria-label="服务器状态：检测中" title="服务器状态：检测中…"></span>
     <span class="who" id="railWho"></span>
     <button class="logoutbtn" id="logoutBtn" type="button">退出登录</button>
   </div>
@@ -5736,6 +5740,28 @@ async function renderRailUser(){
   who.textContent=me.username;
   who.title='当前账号：'+me.username+(me.role==='admin'?'（管理员）':'');
   box.hidden=false; box.closest('.rail').classList.add('has-user');
+  startSrvStatus();
+}
+/* 账号旁的服务器状态灯：绿 = 在线，红 = 离线；悬停看状态、延迟与检测时间。
+   每 30 秒探一次 /api/health，切回页面或网络恢复/断开时立即补探 */
+let SRV_TIMER=null;
+async function checkSrvStatus(){
+  const dot=document.getElementById('srvDot'), t0=performance.now();
+  let on=false;
+  try{
+    const ac=new AbortController(), to=setTimeout(()=>ac.abort(),5000);
+    const r=await fetch('/api/health',{cache:'no-store',credentials:'include',signal:ac.signal});
+    clearTimeout(to); on=r.ok;
+  }catch(e){}
+  const ms=Math.round(performance.now()-t0), at=new Date().toLocaleTimeString('zh-CN',{hour12:false});
+  const txt=on ? '服务器状态：在线（延迟 '+ms+' ms，'+at+' 检测）' : '服务器状态：离线（'+at+' 检测，无法连接服务器）';
+  dot.dataset.state=on?'on':'off'; dot.title=txt; dot.setAttribute('aria-label',txt);
+}
+function startSrvStatus(){
+  if(SRV_TIMER) return;
+  checkSrvStatus(); SRV_TIMER=setInterval(checkSrvStatus,30000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkSrvStatus(); });
+  window.addEventListener('online',checkSrvStatus); window.addEventListener('offline',checkSrvStatus);
 }
 document.getElementById('logoutBtn').onclick=async function(){
   if(!confirm('确定退出登录？')) return;
