@@ -90,6 +90,19 @@ button,input,select,textarea{font:inherit;color:inherit}
 .navbtn[aria-current="true"]{background:var(--accent);color:#fff}
 .navbtn .n{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:0 0 auto;opacity:.72}
 .navbtn[aria-current="true"] .n{opacity:1}
+/* 井队考核分组：组头可折叠，子项缩进 */
+.navgrp{display:flex;flex-direction:column;gap:1px}
+.navgrphead{display:flex;align-items:center;gap:10px;width:calc(100% - 16px);margin:0 8px;background:none;border:0;text-align:left;
+  padding:7px 10px;cursor:pointer;color:var(--ink-2);border-radius:var(--r-sm);font-size:13px;font-weight:500;font-family:inherit;
+  transition:background .18s ease,color .18s ease}
+.navgrphead:hover{background:var(--fill);color:var(--ink)}
+.navgrphead .n{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:0 0 auto;opacity:.72}
+.navgrphead .chev{margin-left:auto;display:inline-flex;opacity:.55;transition:transform .2s var(--ease)}
+.navgrphead[aria-expanded="false"] .chev{transform:rotate(-90deg)}
+.navgrp.has-cur .navgrphead{color:var(--ink)}
+.navsub{display:flex;flex-direction:column;gap:1px}
+.navsub[hidden]{display:none}
+.navsub .navbtn{width:calc(100% - 30px);margin-left:22px}
 /* 顶部当前账号 + 退出登录：只在后端模式显示，和左上角菜单按钮同一行（左侧让出按钮位置） */
 .railuser{display:flex;align-items:center;gap:8px;min-height:31px;margin:22px 12px 0 54px}
 .railuser[hidden]{display:none}
@@ -290,6 +303,10 @@ main.full{padding-bottom:26px}
 /* 完成井考核库：置顶折叠条，与切块考核「数据填报」同一形制；展开时自身滚动，不挤压下方两栏 */
 #storeCard{flex:0 0 auto}
 #storeCard .foldbody{max-height:38vh;overflow:auto}
+/* 展开井库时只看井库：隐藏下方填报／结果两栏与栏位开关，井库占满页面 */
+#p-well.store-open .wellsplit,#p-well.store-open .discs{display:none}
+#p-well.store-open #storeCard{flex:0 1 auto;min-height:0;display:flex;flex-direction:column}
+#p-well.store-open #storeCard .foldbody{max-height:none;flex:1 1 auto;min-height:0}
 /* 定额库：并入滚动定额页顶部的折叠条，形制同完成井考核库，默认收起 */
 #quotaCard .qtools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:0;max-width:100%}
 #quotaCard .qtools>*{max-width:100%}
@@ -369,6 +386,13 @@ main.full{padding-bottom:26px}
   .rail>*{flex:0 0 auto}
   .rail{padding-right:52px;padding-left:52px}
   .navbtn{width:auto;margin:0;white-space:nowrap;padding:6px 12px}
+  /* 窄屏横排：分组拆平，组头作为可折叠的分段标签 */
+  .navgrp,.navsub{display:contents}
+  .navsub[hidden]{display:none}
+  .navgrphead{width:auto;margin:0;white-space:nowrap;padding:6px 10px;flex:0 0 auto}
+  .navsub .navbtn{width:auto;margin:0}
+  .navgrphead[aria-expanded="false"] .chev{transform:rotate(90deg)}
+  .navgrphead[aria-expanded="true"] .chev{transform:rotate(-90deg)}
   .railuser{margin:0 4px 0 0;min-height:0}
   .railuser .who{display:none}
   main{padding:18px 15px 64px}
@@ -443,13 +467,18 @@ main.full{padding-bottom:26px}
     <div class="sub">三定额 · 三专项 · 数据溯源</div>
   </div>
   <button class="navbtn" data-go="dash"><span class="n">01</span>切块考核</button>
-  <button class="navbtn" data-go="well"><span class="n">02</span>单井考核</button>
-  <button class="navbtn" data-go="pre"><span class="n">03</span>兑现登记</button>
-  <button class="navbtn" data-go="roll"><span class="n">04</span>滚动定额</button>
-  <button class="navbtn" data-go="team"><span class="n">05</span>班子绩效</button>
-  <button class="navbtn" data-go="tinfo"><span class="n">06</span>队伍信息</button>
-  <button class="navbtn" data-go="bak"><span class="n">07</span>数据备份</button>
-  <button class="navbtn" data-go="owp"><span class="n">08</span>一井一策</button>
+  <div class="navgrp" id="navCrew">
+    <button class="navgrphead" type="button" aria-expanded="true" aria-controls="navCrewSub"><span class="n"></span>井队考核<span class="chev"></span></button>
+    <div class="navsub" id="navCrewSub">
+      <button class="navbtn" data-go="well"><span class="n">02</span>单井考核</button>
+      <button class="navbtn" data-go="pre"><span class="n">03</span>兑现登记</button>
+      <button class="navbtn" data-go="team"><span class="n">04</span>班子绩效</button>
+      <button class="navbtn" data-go="owp"><span class="n">05</span>一井一策</button>
+      <button class="navbtn" data-go="tinfo"><span class="n">06</span>队伍信息</button>
+    </div>
+  </div>
+  <button class="navbtn" data-go="roll"><span class="n">07</span>滚动定额</button>
+  <button class="navbtn" data-go="bak"><span class="n">08</span>数据备份</button>
   <button class="navbtn" data-go="airules" id="navAiRules" hidden><span class="n">09</span>解析规则</button>
   <div class="railfoot">
     依据：2026年经营责任制实施办法 · 附件1 考核标准及相关定额 · 附件2 大港油区单井经营考核办法（试行）· 附件3 钻井队班子绩效考核办法
@@ -1840,6 +1869,14 @@ function submitWell(){
   }
   saveWells(); renderWellActions(); renderWellStore(); renderWellSettle(); renderDash();
 }
+// 完成井考核库折叠条：展开时隐藏单井考核页其余内容（见 #p-well.store-open）
+function setStoreOpen(open){
+  const card=$('#storeCard'), btn=$('#storeFold');
+  card.classList.toggle('closed',!open);
+  $('#p-well').classList.toggle('store-open',open);
+  $('#storeFoldAct').textContent=open?'收起井库':'展开井库'; btn.setAttribute('aria-expanded',open);
+  try{ localStorage.setItem('kh-store-fold', open?'0':'1'); }catch(e){}
+}
 function loadWell(id,edit){
   const r=WELLS.find(x=>x.id===id); if(!r) return;
   S.w=Object.assign(clone(W_DEFAULT),clone(r.w)); S.prov=clone(r.prov);   // 旧记录没有后来新增的字段，按默认值补齐
@@ -1847,6 +1884,7 @@ function loadWell(id,edit){
   wellMsg(edit ? '正在编辑 <b>'+r.w.wellNo+'</b>（'+r.id+'）。修改后点「更新入库」覆盖原记录，或点「取消编辑」放弃。'
                 : '已调取 <b>'+r.w.wellNo+'</b> 到表单。当前为新建模式，提交将作为新记录入库。', edit?'':'ok');
   render(); renderPre(); renderWellActions(); renderWellStore();
+  setStoreOpen(false);   // 调取／修改后收起井库，回到表单
   const el2=$('#wellForm'); if(el2) el2.scrollIntoView({block:'start',behavior:'smooth'});
 }
 function delWell(id){
@@ -3324,7 +3362,7 @@ function renderTeam(){
   const y=PERF_Y, M=perfScored(y), rows=M.rows, scored=M.scored;
   const msg=$('#perfMsg');
   if(msg) msg.innerHTML = rows.length ? '' :
-    '<div class="note" style="margin-bottom:14px">'+y+' 年「队伍信息」里还没有大港油区钻井队的记录，请先在 07 队伍信息中登记。</div>';
+    '<div class="note" style="margin-bottom:14px">'+y+' 年「队伍信息」里还没有大港油区钻井队的记录，请先在「井队考核 › 队伍信息」中登记。</div>';
   const cnt=$('#perfCount'); if(cnt) cnt.textContent = y+' 年 · 大港油区 '+rows.length+' 支钻井队';
   const xb=$('#perfXls'); if(xb) xb.disabled=!scored.length;
 
@@ -3433,7 +3471,7 @@ async function perfExportXls(){
   const b=$('#perfXls'); if(b) b.disabled=true;
   try{
     const y=PERF_Y, M=perfScored(y);
-    if(!M.scored.length) throw new Error(y+' 年没有可导出的队伍，请先在 07 队伍信息中登记');
+    if(!M.scored.length) throw new Error(y+' 年没有可导出的队伍，请先在「井队考核 › 队伍信息」中登记');
     const name='班子绩效_综合排名与兑现_'+y+'_'+ymd()+'.xls';
     await dlXls(name,buildPerfXls(y,M.scored,M.base));
     perfImpMsg('已导出 '+name+'（'+M.scored.length+' 支队伍）','ok');
@@ -4577,6 +4615,7 @@ function go(id){
   if(id==='quota'){ id='roll'; openQuotaFold(); }
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on', p.id==='p-'+id));
   document.querySelectorAll('.navbtn').forEach(b=>b.setAttribute('aria-current', b.dataset.go===id));
+  syncNavGroups();
   document.querySelector('main').classList.toggle('full', id==='well');
   if(id==='pre') renderPre();
   if(id==='roll'){ renderRoll(); renderQuota(); }
@@ -4588,10 +4627,25 @@ function go(id){
   if(id==='well') requestAnimationFrame(syncPhH);
   window.scrollTo({top:0,behavior:'instant'});
   // 窄屏导航条横排可横向滚动：把当前页按钮滚到可见处
-  const cur=document.querySelector('.navbtn[aria-current="true"]'), rail=cur&&cur.parentElement;
+  const cur=document.querySelector('.navbtn[aria-current="true"]'), rail=cur&&cur.closest('.rail');
   if(rail&&rail.scrollWidth>rail.clientWidth) rail.scrollTo({left:cur.offsetLeft-(rail.clientWidth-cur.offsetWidth)/2,behavior:'smooth'});
 }
 document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>go(b.dataset.go));
+// 导航分组（井队考核）：点组头折叠／展开；当前页在组内时自动展开
+function setNavGroup(g,open){
+  const h=g.querySelector('.navgrphead'), sub=g.querySelector('.navsub');
+  h.setAttribute('aria-expanded',open); sub.hidden=!open;
+}
+function syncNavGroups(){
+  document.querySelectorAll('.navgrp').forEach(g=>{
+    const has=!!g.querySelector('.navbtn[aria-current="true"]');
+    g.classList.toggle('has-cur',has);
+    if(has) setNavGroup(g,true);
+  });
+}
+document.querySelectorAll('.navgrp').forEach(g=>{
+  g.querySelector('.navgrphead').onclick=()=>setNavGroup(g, g.querySelector('.navsub').hidden);
+});
 
 
 function render(){ renderForm(); renderResults(); }
@@ -4696,6 +4750,13 @@ const NAV_ICON={
   owp:'<rect x="4" y="2.6" width="12" height="14.8" rx="2.6"/><rect x="6.7" y="5.3" width="6.6" height="2.8" rx=".8"/><path d="M7.3 11.2h.01M10 11.2h.01M12.7 11.2h.01M7.3 14.3h.01M10 14.3h.01M12.7 14.3h.01"/>'
 };
 (function(){
+  document.querySelectorAll('.navgrphead').forEach(h=>{
+    h.querySelector('.n').innerHTML='<svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" '+
+      'stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+
+      '<path d="M10 2.6v3.2M6.2 17.4L10 5.8l3.8 11.6M7.4 13.6h5.2M8.3 10.6h3.4"/><path d="M3.4 17.4h13.2"/></svg>';
+    h.querySelector('.chev').innerHTML='<svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" '+
+      'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 8l4.5 4.5L14.5 8"/></svg>';
+  });
   document.querySelectorAll('.navbtn').forEach(b=>{
     const n=b.querySelector('.n'), k=b.dataset.go;
     if(n&&NAV_ICON[k]) n.innerHTML='<svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" '+
@@ -4818,15 +4879,10 @@ renderRollRules();
     vb.onclick=()=>toggle('view');
   })();
   (function(){
-    const card=$('#storeCard'), btn=$('#storeFold'), act=$('#storeFoldAct');
-    function paint(){ const open=!card.classList.contains('closed');
-      act.textContent=open?'收起井库':'展开井库'; btn.setAttribute('aria-expanded',open); }
+    const btn=$('#storeFold');
     let saved=null; try{ saved=localStorage.getItem('kh-store-fold'); }catch(e){}
-    if(saved==='0') card.classList.remove('closed');   // 旧键值：0=展开，1/空=收起
-    paint();
-    btn.onclick=()=>{ card.classList.toggle('closed');
-      try{ localStorage.setItem('kh-store-fold', card.classList.contains('closed')?'1':'0'); }catch(e){}
-      paint(); };
+    setStoreOpen(saved==='0');   // 旧键值：0=展开，1/空=收起
+    btn.onclick=()=>setStoreOpen($('#storeCard').classList.contains('closed'));
   })();
   (function(){
     const btn=$('#quotaFold');
