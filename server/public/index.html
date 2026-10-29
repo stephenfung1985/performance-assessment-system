@@ -147,6 +147,14 @@ main{padding:26px 32px 80px;min-width:0}
 .card>header{padding:13px 16px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .card>header h3{font-size:14.5px;letter-spacing:-.014em}
 .card>.body{padding:16px}
+/* 可折叠卡片：点表头展开 / 收起，状态按卡片记忆 */
+.cfold>header{cursor:pointer;user-select:none;transition:background .18s ease}
+.cfold>header:hover{background:var(--fill)}
+.cfold>header h3{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.cfold>header h3 svg{color:var(--accent);flex:0 0 auto;transition:transform .28s var(--ease)}
+.cfold.closed>header{border-bottom-color:transparent}
+.cfold.closed>header h3 svg{transform:rotate(-90deg)}
+.cfold.closed>.body{display:none}
 .eyebrow{font-size:11.5px;color:var(--muted);font-weight:500;letter-spacing:0}
 .grid{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
 .num{font-variant-numeric:tabular-nums}
@@ -695,21 +703,21 @@ main.full{padding-bottom:26px}
 
   <div id="preSettle"></div>
 
-  <div class="card" style="margin-top:16px">
-    <header><h3>预兑现登记明细</h3><span class="eyebrow" id="preWellLabel"></span></header>
+  <div class="card cfold closed" style="margin-top:16px" data-fold="pre-detail">
+    <header role="button" tabindex="0"><h3><svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 8l4.5 4.5L14.5 8"/></svg>预兑现登记明细</h3><span class="eyebrow" id="preWellLabel"></span></header>
     <div class="body"><div class="scroll"><table id="preTbl"></table></div></div>
   </div>
 
-  <div class="card" style="margin-top:16px">
-    <header><h3>月度应发汇总</h3><span class="eyebrow">按队号 × 月份 · 实际发放口径</span></header>
+  <div class="card cfold" style="margin-top:16px" data-fold="pre-month">
+    <header role="button" tabindex="0"><h3><svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 8l4.5 4.5L14.5 8"/></svg>月度应发汇总</h3><span class="eyebrow">按队号 × 月份 · 实际发放口径</span></header>
     <div class="body">
       <div class="scroll"><table id="teamMonthTbl"></table></div>
       <p class="sub" style="margin:9px 0 0">同一支队伍当月多口井合并为一行汇总应发；跨队接替可逐月改「承担队号」，历史月份仍归原队。</p>
     </div>
   </div>
 
-  <div class="card" style="margin-top:16px">
-    <header><h3>单井兑现情况</h3><span class="eyebrow" id="wellSettleCount">完成井考核库 · 已审核井自动流转</span></header>
+  <div class="card cfold" style="margin-top:16px" data-fold="pre-well">
+    <header role="button" tabindex="0"><h3><svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 8l4.5 4.5L14.5 8"/></svg>单井兑现情况</h3><span class="eyebrow" id="wellSettleCount">完成井考核库 · 已审核井自动流转</span></header>
     <div class="body">
       <div class="scroll"><table id="wellSettleTbl"></table></div>
       <p class="sub" style="margin-top:12px">完成井考核库中<b>已审核</b>的井自动流转至本表，按队号 × 入库时序逐井清算。成本节超与三专项须完井后判定，默认不预发；预兑现<b>按预支处理</b>，完井全额扣回。本井节余 / 挂账 =<b> 上口井结转 + 兑现总额 − 预兑现合计 − 终考核实发</b>，无论节余还是挂账<b>一律自动结转到本队的下口井</b>，并入下口井终考核一并清算（附件2 七（四））。「终考核实发」可直接在表内登记，留空则按应发尽发预填。</p>
@@ -2138,7 +2146,7 @@ function refreshPreLive(){
 }
 
 /* 按（队号 × 月份）汇总——这是实际发放口径；兑现月份 / 队号 / 在钻井号三列表头带筛选下拉 */
-const TMF={m:'',team:'',well:''};
+const TMF={m:'',team:'',well:'',auto:true};   // auto：用户未手动选月份前，默认显示最近兑现月份
 function renderTeamMonth(C){
   const T=$('#teamMonthTbl'); if(!T) return;
   const all=(C||preCompute()).tm;
@@ -2146,6 +2154,7 @@ function renderTeamMonth(C){
   const uniq=f=>[...new Set(all.flatMap(f))].sort((a,b)=>String(a).localeCompare(String(b),'zh'));
   const opts={m:uniq(r=>[r.m]), team:uniq(r=>[r.team]), well:uniq(r=>r.wells)};
   ['m','team','well'].forEach(k=>{ if(TMF[k] && !opts[k].includes(TMF[k])) TMF[k]=''; });   // 选项已不存在（如记录被删）则自动清除
+  if(TMF.auto) TMF.m=opts.m.slice().sort().pop()||'';
   const rows=all.filter(r=>(!TMF.m||r.m===TMF.m)&&(!TMF.team||r.team===TMF.team)&&(!TMF.well||r.wells.includes(TMF.well)));
   const sel=k=>'<select class="tmf" data-tmf="'+k+'" style="max-width:130px;font-size:12px"><option value="">全部</option>'+
     opts[k].map(o=>'<option value="'+esc(o)+'"'+(TMF[k]===o?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>';
@@ -2164,6 +2173,7 @@ function renderTeamMonth(C){
     '<td class="l dim">—</td><td class="dim">'+wn.size+'<div class="sub">去重</div></td>'+
     '<td><strong>'+fmt(S4('paid'))+'</strong></td></tr></tbody>';
   T.querySelectorAll('select.tmf').forEach(n=>n.addEventListener('change',e=>{
+    if(e.target.dataset.tmf==='m') TMF.auto=false;
     TMF[e.target.dataset.tmf]=e.target.value; renderTeamMonth(); }));
 }
 
@@ -4892,6 +4902,17 @@ renderRollRules();
     btn.onclick=()=>{ $('#quotaCard').classList.toggle('closed'); saveQuotaFold(); paintQuotaFold(); };
   })();
   $('#preWellSel').addEventListener('change',e=>{ PRE_WELL=e.target.value; preMsg(''); renderPre(); });
+  document.querySelectorAll('.cfold').forEach(card=>{
+    const key='kh-fold-'+card.dataset.fold, hd=card.querySelector(':scope>header');
+    try{ const v=localStorage.getItem(key); if(v) card.classList.toggle('closed',v==='1'); }catch(e){}
+    const paint=()=>hd.setAttribute('aria-expanded',!card.classList.contains('closed'));
+    const flip=e=>{ if(e.target.closest('select,input,button,a')) return;
+      card.classList.toggle('closed'); paint();
+      try{ localStorage.setItem(key,card.classList.contains('closed')?'1':'0'); }catch(err){} };
+    hd.addEventListener('click',flip);
+    hd.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); flip(e); } });
+    paint();
+  });
   // 单井考核 →「去兑现登记」：带上当前井号，直接定位到该井的登记明细
   $('#toPreMod').onclick=()=>{ const n=String(S.w.wellNo||'').trim();
     PRE_WELL=(n && (PRES||[]).some(x=>String(x.wellNo).trim()===n)) ? n : '__all';
