@@ -15,6 +15,7 @@ const cookie = require('cookie');
 const store = require('./lib/store');
 const auth = require('./lib/auth');
 const { seedQuota, seedWells, seedAdmin } = require('./lib/seed');
+const CarryNote = require('./public/carry-note');
 
 const PORT = process.env.PORT || 4000;
 const app = express();
@@ -78,11 +79,21 @@ app.post('/api/users/:username/password', auth.requireAuth, auth.requireAdmin, (
 });
 
 // ================= 井库（完成井考核库 + 一井一策样本，前端整表读写） =================
+// 兑现登记「单井兑现情况」里的终考核实发（pay）和结转处理说明（carryNote）
+// 都挂在对应井记录上，跟井库一起整表读写。谁能登录后改井库 / 登记兑现，谁就能改说明。
+function clampCarryNotes(rows) {
+  rows.forEach(row => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return;
+    if (!Object.prototype.hasOwnProperty.call(row, 'carryNote') || row.carryNote == null) return;
+    row.carryNote = String(row.carryNote).slice(0, CarryNote.MAX);
+  });
+}
 app.get('/api/wells', auth.requireAuth, (req, res) => {
   res.json(store.readJSON('wells', []));
 });
 app.put('/api/wells', auth.requireAuth, (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).json({ error: 'body_must_be_array' });
+  clampCarryNotes(req.body);
   store.writeJSON('wells', req.body);
   res.json({ ok: true, count: req.body.length });
 });
